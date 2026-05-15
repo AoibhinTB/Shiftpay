@@ -244,9 +244,22 @@
         <input type="text" class="time-input" id="l-end" placeholder="--:--" inputmode="numeric" maxlength="5" onkeyup="fmtTime(this)" onchange="refreshBK()" oninput="fmtTime(this);refreshBK()">
       </div>
     </div>
-    <div class="check-row" id="log-ph-row" onclick="flipPH(event)">
-      <input type="checkbox" id="l-ph" onchange="refreshBK()">
-      <label for="l-ph">Bank Holiday</label>
+    <div style="display:flex;align-items:center;gap:7px;margin-top:10px;padding:0 2px">
+      <input type="checkbox" id="l-ph" onchange="refreshBK()" style="width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0">
+      <label for="l-ph" style="font-size:11px;color:var(--dim);cursor:pointer;user-select:none">Bank Holiday</label>
+    </div>
+    <div style="margin-top:10px">
+      <label class="lbl" style="margin-bottom:6px">Unpaid Break</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field">
+          <label class="lbl" style="font-size:10px">Hours</label>
+          <input type="number" id="l-break-h" placeholder="0" min="0" max="23" step="1" oninput="refreshBK()" onchange="refreshBK()" style="text-align:center">
+        </div>
+        <div class="field">
+          <label class="lbl" style="font-size:10px">Minutes</label>
+          <input type="number" id="l-break-m" placeholder="0" min="0" max="59" step="1" oninput="refreshBK()" onchange="refreshBK()" style="text-align:center">
+        </div>
+      </div>
     </div>
   </div>
   <div id="bk-wrap"></div>
@@ -539,10 +552,12 @@ function toMin(t) { if (!t) return 0; var p = t.split(':'); return parseInt(p[0]
 function inRange(min, start, end) { var s=toMin(start),e=toMin(end); if(s===0&&e===0)return true; if(s===0&&e>=23*60+59)return true; if(s>e)return min>=s||min<e; return min>=s&&min<e; }
 function rankedBands() { return bands.slice().sort(function(a,b){return(b.rate||0)-(a.rate||0);}); }
 
-function calcShift(date, start, end, isPH) {
+function calcShift(date, start, end, isPH, breakMins) {
+  var brkMins = parseInt(breakMins) || 0;
   var parts=date.split('-'),cur=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]),parseInt(start.split(':')[0]),parseInt(start.split(':')[1]),0);
   var fp=date.split('-'),fin=new Date(parseInt(fp[0]),parseInt(fp[1])-1,parseInt(fp[2]),parseInt(end.split(':')[0]),parseInt(end.split(':')[1]),0);
   if (fin <= cur) fin.setDate(fin.getDate() + 1);
+  if (brkMins > 0) fin = new Date(fin.getTime() - brkMins * 60000);
   var ranked = rankedBands();
   var phBand = isPH ? ranked.filter(function(b){return b.phOnly;})[0] : null;
   var hm = {}, pm = {};
@@ -595,21 +610,30 @@ function refreshBK() {
   var date=document.getElementById('l-date').value, start=document.getElementById('l-start').value, end=document.getElementById('l-end').value, isPH=document.getElementById('l-ph').checked;
   var wrap=document.getElementById('bk-wrap'), btn=document.getElementById('add-btn');
   if (!date || !validTime(start) || !validTime(end)) { wrap.innerHTML=''; btn.style.display='none'; return; }
-  var c = calcShift(date, start, end, isPH);
-  wrap.innerHTML = '<div class="bk-card">'+buildBkHtml(c,null)+'</div>';
+  var brkH = parseInt(document.getElementById('l-break-h').value) || 0;
+  var brkM = parseInt(document.getElementById('l-break-m').value) || 0;
+  var brkMins = brkH * 60 + brkM;
+  var c = calcShift(date, start, end, isPH, brkMins);
+  var brkNote = brkMins > 0 ? '<div style="font-size:11px;color:var(--mid);margin-bottom:10px">Unpaid break of ' + (brkH>0?brkH+'h ':'') + (brkM>0?brkM+'min':'') + ' deducted</div>' : '';
+  wrap.innerHTML = '<div class="bk-card">' + brkNote + buildBkHtml(c,null) + '</div>';
   btn.style.display = 'block';
 }
 
 function addShift() {
   var date=document.getElementById('l-date').value, start=document.getElementById('l-start').value, end=document.getElementById('l-end').value, isPH=document.getElementById('l-ph').checked;
+  var brkH = parseInt(document.getElementById('l-break-h').value) || 0;
+  var brkM = parseInt(document.getElementById('l-break-m').value) || 0;
+  var brkMins = brkH * 60 + brkM;
   if (!date||!validTime(start)||!validTime(end)) return;
-  var c = calcShift(date, start, end, isPH);
-  shifts.push({ id:Date.now(), date:date, start:start, end:end, isPH:isPH, hm:c.hm, pm:c.pm, th:c.th, tp:c.tp, snap:JSON.parse(JSON.stringify(bands)) });
+  var c = calcShift(date, start, end, isPH, brkMins);
+  shifts.push({ id:Date.now(), date:date, start:start, end:end, isPH:isPH, breakMins:brkMins, hm:c.hm, pm:c.pm, th:c.th, tp:c.tp, snap:JSON.parse(JSON.stringify(bands)) });
   persist();
   var base=null; for(var bi=0;bi<bands.length;bi++){if(bands[bi].locked==='base'){base=bands[bi];break;}}
   document.getElementById('l-start').value = base ? base.start : '';
   document.getElementById('l-end').value   = base ? base.end   : '';
   document.getElementById('l-ph').checked=false;
+  document.getElementById('l-break-h').value='';
+  document.getElementById('l-break-m').value='';
   document.getElementById('bk-wrap').innerHTML=''; document.getElementById('add-btn').style.display='none';
   toast('Shift added'); renderSummary();
 }
@@ -668,20 +692,27 @@ function refreshEditBK(id) {
   var dateEl=document.getElementById('ed-date-'+id), startEl=document.getElementById('ed-start-'+id), endEl=document.getElementById('ed-end-'+id), phEl=document.getElementById('ed-ph-'+id), bkEl=document.getElementById('ed-bk-'+id);
   if (!dateEl||!bkEl) return;
   var date=dateEl.value, start=startEl.value, end=endEl.value, isPH=phEl?phEl.checked:false;
+  var brkH=parseInt(document.getElementById('ed-brk-h-'+id)&&document.getElementById('ed-brk-h-'+id).value)||0;
+  var brkM=parseInt(document.getElementById('ed-brk-m-'+id)&&document.getElementById('ed-brk-m-'+id).value)||0;
   if (!date||!validTime(start)||!validTime(end)) { bkEl.innerHTML=''; return; }
-  var c=calcShift(date,start,end,isPH);
-  bkEl.innerHTML='<div class="bk-card" style="box-shadow:none;border:1px solid var(--border)">'+buildBkHtml(c,null)+'</div>';
+  var brkMins=brkH*60+brkM;
+  var c=calcShift(date,start,end,isPH,brkMins);
+  var brkNote = brkMins>0?'<div style="font-size:11px;color:var(--mid);margin-bottom:8px">Break of '+(brkH>0?brkH+'h ':'')+( brkM>0?brkM+'min':'')+' deducted</div>':'';
+  bkEl.innerHTML='<div class="bk-card" style="box-shadow:none;border:1px solid var(--border)">'+brkNote+buildBkHtml(c,null)+'</div>';
 }
 
 function saveEdit(id) {
   var dateEl=document.getElementById('ed-date-'+id), startEl=document.getElementById('ed-start-'+id), endEl=document.getElementById('ed-end-'+id), phEl=document.getElementById('ed-ph-'+id);
   if (!dateEl) return;
   var date=dateEl.value, start=startEl.value, end=endEl.value, isPH=phEl?phEl.checked:false;
+  var brkH=parseInt(document.getElementById('ed-brk-h-'+id)&&document.getElementById('ed-brk-h-'+id).value)||0;
+  var brkM=parseInt(document.getElementById('ed-brk-m-'+id)&&document.getElementById('ed-brk-m-'+id).value)||0;
+  var brkMins=brkH*60+brkM;
   if (!date||!validTime(start)||!validTime(end)) { toast('Check times are in HH:MM format'); return; }
-  var c=calcShift(date,start,end,isPH);
+  var c=calcShift(date,start,end,isPH,brkMins);
   var s=null; for(var i=0;i<shifts.length;i++){if(shifts[i].id===id){s=shifts[i];break;}}
   if (!s) return;
-  Object.assign(s,{date:date,start:start,end:end,isPH:isPH,hm:c.hm,pm:c.pm,th:c.th,tp:c.tp,snap:JSON.parse(JSON.stringify(bands))});
+  Object.assign(s,{date:date,start:start,end:end,isPH:isPH,breakMins:brkMins,hm:c.hm,pm:c.pm,th:c.th,tp:c.tp,snap:JSON.parse(JSON.stringify(bands))});
   persist(); editingShiftId=null; toast('Shift updated'); renderSummary();
 }
 
@@ -864,6 +895,10 @@ function renderSummary() {
           +'</div><div class="check-row" onclick="toggleEditPH('+s.id+')">'
           +'<input type="checkbox" id="ed-ph-'+s.id+'"'+(s.isPH?' checked':'')+' onchange="refreshEditBK('+s.id+')">'
           +'<label>Bank Holiday</label></div>'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">'
+          +'<div class="field"><label class="lbl">Break (hrs)</label><input type="number" id="ed-brk-h-'+s.id+'" value="'+(s.breakMins?Math.floor(s.breakMins/60):'')+'" placeholder="0" min="0" max="23" step="1" oninput="refreshEditBK('+s.id+')" style="text-align:center"></div>'
+          +'<div class="field"><label class="lbl">Break (mins)</label><input type="number" id="ed-brk-m-'+s.id+'" value="'+(s.breakMins?s.breakMins%60:'')+'" placeholder="0" min="0" max="59" step="1" oninput="refreshEditBK('+s.id+')" style="text-align:center"></div>'
+          +'</div>'
           +'<div id="ed-bk-'+s.id+'" style="margin-top:10px"></div>'
           +'<div class="edit-actions"><button class="edit-cancel" onclick="cancelEdit()">Cancel</button><button class="edit-save" onclick="saveEdit('+s.id+')">Save Changes</button></div>'
           +'</div></div>';
@@ -878,7 +913,7 @@ function renderSummary() {
       var phFlag = s.isPH ? ' &#127987;' : '';
       shiftRows += '<div class="sh-item"><div class="sh-main"><div class="sh-top"><div>'
         +'<div class="sh-date">'+ds+phFlag+'</div>'
-        +'<div class="sh-time">'+s.start+' - '+s.end+' &middot; '+s.th.toFixed(1)+'h total</div></div>'
+        +'<div class="sh-time">'+s.start+' - '+s.end+' &middot; '+s.th.toFixed(1)+'h'+(s.breakMins?' &middot; '+s.breakMins+'min break':'')+' </div></div>'
         +'<div style="display:flex;align-items:center"><div class="sh-pay">€'+s.tp.toFixed(2)+'</div>'
         +'<div class="sh-btns"><button class="sh-btn edit" onclick="startEdit('+s.id+')">Edit</button>'
         +'<button class="sh-btn del" onclick="delShift('+s.id+')">&#x2715;</button></div></div></div>'
