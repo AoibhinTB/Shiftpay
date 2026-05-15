@@ -34,21 +34,21 @@
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; background: var(--bg); }
     body { font-family: 'Plus Jakarta Sans', sans-serif; color: var(--text); max-width: 480px; margin: 0 auto; padding-bottom: 40px; }
-
+ 
     .hdr { background: var(--white); border-bottom: 1px solid var(--border); padding: 14px 16px 10px; position: sticky; top: 0; z-index: 100; }
     .brand { font-size: 20px; font-weight: 800; letter-spacing: -.4px; margin-bottom: 12px; }
     .brand em { color: var(--green); font-style: normal; }
     .tabs { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: calc(var(--r) + 2px); padding: 3px; }
     .tb { flex: 1; border: none; background: transparent; border-radius: var(--r-sm); color: var(--dim); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; font-weight: 600; padding: 8px 4px; cursor: pointer; transition: all .18s; }
     .tb.on { background: var(--white); color: var(--green); box-shadow: var(--shadow); }
-
+ 
     .page { padding: 16px; display: none; }
     .page.on { display: block; }
     .pg-title { font-size: 18px; font-weight: 800; margin-bottom: 2px; letter-spacing: -.3px; }
     .pg-sub { font-size: 12px; color: var(--mid); margin-bottom: 18px; line-height: 1.55; }
-
+ 
     .card { background: var(--white); border-radius: var(--r); box-shadow: var(--shadow); padding: 15px; margin-bottom: 12px; }
-
+ 
     label.lbl { display: block; font-size: 11px; font-weight: 600; color: var(--mid); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 5px; }
     input[type=text], input[type=number], input[type=time], input[type=date] {
       background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm);
@@ -65,11 +65,11 @@
     .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .field { display: flex; flex-direction: column; }
     .field.full { grid-column: 1 / -1; }
-
+ 
     .day-row { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
     .day-pill { border: 1.5px solid var(--border); border-radius: 20px; background: var(--bg); color: var(--mid); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11px; font-weight: 700; padding: 4px 9px; cursor: pointer; transition: all .15s; user-select: none; }
     .day-pill.on { border-color: currentColor; }
-
+ 
     .band-card { background: var(--white); border-radius: var(--r); box-shadow: var(--shadow); margin-bottom: 10px; overflow: hidden; border-left: 4px solid #ccc; }
     .band-head { display: flex; align-items: center; gap: 8px; padding: 12px 13px; cursor: pointer; }
     .band-name-d { font-size: 14px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -80,27 +80,27 @@
     .band-body.open { display: block; }
     .band-fields { display: grid; gap: 10px; }
     .band-actions { display: flex; gap: 6px; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
-
+ 
     .btn-ghost { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--mid); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; font-weight: 600; padding: 8px; cursor: pointer; transition: all .15s; }
     .btn-ghost.danger { color: var(--danger); border-color: rgba(192,57,43,.3); background: var(--danger-lt); }
     .btn-add { width: 100%; border: 2px dashed var(--border); border-radius: var(--r); background: transparent; color: var(--mid); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 13px; cursor: pointer; transition: all .15s; margin-bottom: 12px; }
     .btn-add:hover { border-color: var(--green); color: var(--green); }
-
+ 
     .btn-primary { width: 100%; background: var(--green); color: #fff; border: none; border-radius: var(--r); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; font-weight: 700; padding: 14px; cursor: pointer; transition: opacity .15s, transform .1s; margin-top: 4px; }
     .btn-primary:active { opacity: .88; transform: scale(.99); }
     .btn-outline-danger { width: 100%; background: var(--danger-lt); color: var(--danger); border: 1.5px solid rgba(192,57,43,.35); border-radius: var(--r); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 12px; cursor: pointer; margin-top: 8px; }
     .save-ok { text-align: center; font-size: 12px; font-weight: 600; color: var(--green); padding: 8px; opacity: 0; transition: opacity .25s; }
     .save-ok.on { opacity: 1; }
-
-
+ 
+ 
     .swatch-row { display: flex; gap: 7px; flex-wrap: wrap; }
     .swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; transition: all .15s; border: 3px solid transparent; box-shadow: 0 0 0 2px transparent; }
     .swatch.on { box-shadow: 0 0 0 2px white, 0 0 0 4px currentColor; }
-
+ 
     .check-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm); cursor: pointer; margin-top: 8px; }
     .check-row input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--green); cursor: pointer; }
     .check-row label { font-size: 13px; font-weight: 500; color: var(--mid); cursor: pointer; flex: 1; }
-
+ 
     .bk-card { background: var(--white); border-radius: var(--r); box-shadow: var(--shadow); padding: 15px; margin-top: 12px; }
     .bk-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-bottom: 12px; }
     .bk-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
@@ -114,25 +114,25 @@
     .bk-foot-l { font-size: 14px; font-weight: 700; }
     .bk-foot-r { font-size: 26px; font-weight: 800; color: var(--green); letter-spacing: -.5px; }
     .warn-box { margin-top: 10px; padding: 9px 12px; background: var(--amber-lt); border: 1px solid rgba(180,83,9,.25); border-radius: var(--r-sm); font-size: 11px; color: var(--amber); line-height: 1.5; }
-
+ 
     .filter-row { display: flex; gap: 6px; margin-bottom: 16px; }
     .fbtn { background: var(--white); border: 1px solid var(--border); border-radius: 20px; color: var(--mid); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; font-weight: 600; padding: 5px 14px; cursor: pointer; transition: all .15s; box-shadow: var(--shadow); }
     .fbtn.on { background: var(--green); border-color: var(--green); color: #fff; }
-
+ 
     .hero { background: var(--green); border-radius: var(--r); padding: 22px; text-align: center; margin-bottom: 12px; color: #fff; }
     .hero-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; opacity: .75; margin-bottom: 6px; }
     .hero-amt { font-size: 48px; font-weight: 800; letter-spacing: -1.5px; line-height: 1; }
     .hero-sub { font-size: 12px; opacity: .7; margin-top: 6px; }
-
+ 
     .band-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
     .bnd-tile { background: var(--white); border-radius: var(--r-sm); box-shadow: var(--shadow); padding: 13px; border-top: 3px solid #ccc; }
     .bnd-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--mid); margin-bottom: 5px; }
     .bnd-hrs { font-size: 22px; font-weight: 800; letter-spacing: -.4px; }
     .bnd-pay { font-size: 12px; color: var(--mid); margin-top: 1px; }
-
+ 
     .list-head { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--mid); margin-bottom: 8px; }
     .divider { height: 1px; background: var(--border); margin: 18px 0; }
-
+ 
     .sh-item { background: var(--white); border-radius: var(--r-sm); box-shadow: var(--shadow); margin-bottom: 8px; overflow: hidden; }
     .sh-main { padding: 13px; }
     .sh-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
@@ -145,27 +145,27 @@
     .sh-btn.del:hover { color: var(--danger); background: var(--danger-lt); }
     .tag-row { display: flex; gap: 5px; flex-wrap: wrap; }
     .tag { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
-
+ 
     .sh-edit-form { border-top: 1px solid var(--border); padding: 13px; background: var(--bg); }
     .edit-actions { display: flex; gap: 6px; margin-top: 10px; }
     .edit-save { flex: 1; background: var(--green); color: #fff; border: none; border-radius: var(--r-sm); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 700; padding: 10px; cursor: pointer; }
     .edit-cancel { flex: 1; background: var(--white); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--mid); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 10px; cursor: pointer; }
-
+ 
     .install-card { background: var(--green-lt); border: 1px solid var(--green-md); border-radius: var(--r); padding: 15px; margin-top: 8px; }
     .install-title { font-size: 13px; font-weight: 700; color: var(--green); margin-bottom: 8px; }
     .install-step { font-size: 12px; color: var(--mid); margin-bottom: 5px; line-height: 1.5; display: flex; gap: 8px; }
     .install-step b { flex-shrink: 0; color: var(--green); }
-
+ 
     .empty { text-align: center; padding: 50px 20px; color: var(--dim); }
     .empty-icon { font-size: 32px; margin-bottom: 10px; }
     .empty-text { font-size: 13px; line-height: 1.7; }
-
+ 
     .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(10px); background: var(--text); color: #fff; padding: 9px 20px; border-radius: 20px; font-size: 12px; font-weight: 600; opacity: 0; transition: all .22s; pointer-events: none; white-space: nowrap; z-index: 999; }
     .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
   </style>
 </head>
 <body>
-
+ 
 <div class="hdr">
   <div class="brand">Shift<em>Pay</em></div>
   <div class="tabs">
@@ -174,11 +174,11 @@
     <button class="tb"    id="tb-summary" onclick="go('summary', this)">Summary</button>
   </div>
 </div>
-
+ 
 <!-- SETUP -->
 <div class="page on" id="pg-setup">
   <div class="pg-title">Pay Bands</div>
-  <div class="pg-sub">Create a band for each rate in your contract. Name it anything — the app automatically gives priority to whichever band has the higher rate.</div>
+  <div class="pg-sub">Create a band for each rate in your contract.</div>
   <div id="band-list"></div>
   <button class="btn-add" onclick="addBand()">+ Add Pay Band</button>
   <button class="btn-primary" onclick="saveBands()">Save Bands</button>
@@ -190,11 +190,11 @@
     <div style="font-size:11px;color:var(--mid);margin-top:8px;line-height:1.5">Once saved it opens like a normal app. All data stays on your device only.</div>
   </div>
 </div>
-
+ 
 <!-- LOG SHIFT -->
 <div class="page" id="pg-log">
   <div class="pg-title">Log a Shift</div>
-  <div class="pg-sub">Enter your start and end times — the app splits your hours across your pay bands automatically.</div>
+  <div class="pg-sub">Enter your start and end times. Your hours will be automatically split across your pay bands.</div>
   <div class="card">
     <div class="row-2" style="gap:8px">
       <div class="field full">
@@ -212,13 +212,13 @@
     </div>
     <div class="check-row" id="log-ph-row">
       <input type="checkbox" id="l-ph" onchange="refreshBK()">
-      <label for="l-ph">Public Holiday — applies highest-rate band to all hours</label>
+      <label for="l-ph">Bank Holiday</label>
     </div>
   </div>
   <div id="bk-wrap"></div>
   <button class="btn-primary" id="add-btn" style="display:none" onclick="addShift()">Add to Log</button>
 </div>
-
+ 
 <!-- SUMMARY -->
 <div class="page" id="pg-summary">
   <div class="pg-title">Pay Summary</div>
@@ -231,16 +231,16 @@
   <div class="divider"></div>
   <button class="btn-outline-danger" onclick="clearAll()">Clear All Shifts</button>
 </div>
-
+ 
 <div id="toast" class="toast"></div>
-
+ 
 <script>
 "use strict";
-
+ 
 // ── Constants ──────────────────────────────────────────────────────────────
 var PALETTE = ['#1c7244','#2563eb','#7c3aed','#db2777','#dc2626','#ea580c','#d97706','#0891b2'];
 var DAYS    = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
+ 
 // ── State ──────────────────────────────────────────────────────────────────
 var bands         = [];
 var shifts        = [];
@@ -248,7 +248,7 @@ var activeFilter  = 'all';
 var nextId        = 1;
 var openBandId    = null;
 var editingShiftId = null;
-
+ 
 // ── Persist ────────────────────────────────────────────────────────────────
 function persist() {
   try {
@@ -257,7 +257,7 @@ function persist() {
     localStorage.setItem('sp_n', String(nextId));
   } catch(e) {}
 }
-
+ 
 function loadData() {
   try {
     var b = localStorage.getItem('sp_b');
@@ -269,7 +269,7 @@ function loadData() {
   } catch(e) {}
   if (!bands.length) loadDefaults();
 }
-
+ 
 function loadDefaults() {
   bands = [
     mkBand('Public Holiday', [0,1,2,3,4,5,6], '00:00', '23:59', 0, PALETTE[0]),
@@ -280,24 +280,24 @@ function loadDefaults() {
     mkBand('Standard',       [1,2,3,4,5],     '09:00', '17:00', 0, PALETTE[1])
   ];
 }
-
+ 
 function mkBand(name, days, start, end, rate, color) {
   return { id: nextId++, name: name, days: days, start: start, end: end, rate: rate, color: color };
 }
-
+ 
 function getBand(id) {
   for (var i = 0; i < bands.length; i++) {
     if (bands[i].id === id) return bands[i];
   }
   return null;
 }
-
+ 
 // ── Band UI helpers (called from onclick attributes) ───────────────────────
 function toggleBand(id) {
   openBandId = (openBandId === id) ? null : id;
   renderBands();
 }
-
+ 
 function addBand() {
   var color = PALETTE[bands.length % PALETTE.length];
   var b = mkBand('New Band', [], '09:00', '17:00', 0, color);
@@ -309,21 +309,21 @@ function addBand() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, 80);
 }
-
+ 
 function delBand(id) {
   if (!confirm('Remove this band?')) return;
   bands = bands.filter(function(b) { return b.id !== id; });
   if (openBandId === id) openBandId = null;
   renderBands();
 }
-
+ 
 function saveBands() {
   persist();
   var el = document.getElementById('save-ok');
   el.classList.add('on');
   setTimeout(function() { el.classList.remove('on'); }, 2200);
 }
-
+ 
 // Called from oninput on band name field
 function updateBandName(id, value) {
   var b = getBand(id);
@@ -332,14 +332,14 @@ function updateBandName(id, value) {
   var el = document.querySelector('#bc' + id + ' .band-name-d');
   if (el) el.textContent = value;
 }
-
+ 
 // Called from onchange on band start/end time fields
 function updateBandTime(id, field, value) {
   var b = getBand(id);
   if (!b) return;
   b[field] = value;
 }
-
+ 
 // Called from onchange on band rate field
 function updateBandRate(id, value) {
   var b = getBand(id);
@@ -356,7 +356,7 @@ function updateBandRate(id, value) {
     }
   }
 }
-
+ 
 // Called from onclick on day pills
 function toggleDay(bandId, day) {
   var b = getBand(bandId);
@@ -375,7 +375,7 @@ function toggleDay(bandId, day) {
     pill.style.background = on ? (b.color + '18') : '';
   });
 }
-
+ 
 // Called from onclick on colour swatches
 function setColor(bandId, color) {
   var b = getBand(bandId);
@@ -393,19 +393,19 @@ function setColor(bandId, color) {
     sw.style.color = color;
   });
 }
-
+ 
 // ── Render bands list ──────────────────────────────────────────────────────
 function renderBands() {
   // Show sorted by rate descending so priority order is visible
   var sorted = bands.slice().sort(function(a, b) { return (b.rate || 0) - (a.rate || 0); });
   var html = '';
-
+ 
   for (var i = 0; i < sorted.length; i++) {
     var b = sorted[i];
     var open = (openBandId === b.id);
     var rateText = b.rate > 0 ? ('EUR ' + b.rate.toFixed(2) + '/hr') : 'Rate not set';
     var rateColor = b.rate > 0 ? b.color : 'var(--dim)';
-
+ 
     // Day pills
     var dayPillsHtml = '';
     for (var d = 0; d < DAYS.length; d++) {
@@ -413,7 +413,7 @@ function renderBands() {
       var pillStyle = on ? ('color:' + b.color + ';border-color:' + b.color + ';background:' + b.color + '18') : '';
       dayPillsHtml += '<button class="day-pill' + (on ? ' on' : '') + '" style="' + pillStyle + '" data-day="' + d + '" onclick="toggleDay(' + b.id + ',' + d + ')">' + DAYS[d] + '</button>';
     }
-
+ 
     // Colour swatches
     var swatchesHtml = '';
     for (var p = 0; p < PALETTE.length; p++) {
@@ -421,22 +421,22 @@ function renderBands() {
       var swOn = (b.color === c);
       swatchesHtml += '<div class="swatch' + (swOn ? ' on' : '') + '" style="background:' + c + ';color:' + c + '" data-color="' + c + '" onclick="setColor(' + b.id + ',\'' + c + '\')"></div>';
     }
-
+ 
     var bodyHtml = '';
     if (open) {
       bodyHtml = '<div class="band-body open">'
         + '<div class="band-fields">'
-
+ 
         + '<div class="field"><label class="lbl">Band Name</label>'
         + '<input type="text" id="bn' + b.id + '" value="' + esc(b.name) + '" oninput="updateBandName(' + b.id + ', this.value)">'
         + '</div>'
-
+ 
         + '<div><label class="lbl" style="margin-bottom:6px">Colour</label>'
         + '<div class="swatch-row" id="sw' + b.id + '">' + swatchesHtml + '</div></div>'
-
+ 
         + '<div><label class="lbl">Applies on</label>'
         + '<div class="day-row" id="dr' + b.id + '">' + dayPillsHtml + '</div></div>'
-
+ 
         + '<div class="row-2">'
         + '<div class="field"><label class="lbl">From</label>'
         + '<input type="time" id="bs' + b.id + '" value="' + b.start + '" onchange="updateBandTime(' + b.id + ', \'start\', this.value)">'
@@ -444,19 +444,19 @@ function renderBands() {
         + '<div class="field"><label class="lbl">Until</label>'
         + '<input type="time" id="be' + b.id + '" value="' + b.end + '" onchange="updateBandTime(' + b.id + ', \'end\', this.value)">'
         + '</div></div>'
-
+ 
         + '<div class="field"><label class="lbl">Hourly Rate</label>'
         + '<div class="pfx"><span class="pfx-s">&#8364;</span>'
         + '<input type="number" id="br' + b.id + '" value="' + (b.rate || '') + '" placeholder="0.00" step="0.01" min="0" onchange="updateBandRate(' + b.id + ', this.value)">'
         + '</div></div>'
-
+ 
         + '</div>'
         + '<div class="band-actions">'
         + '<button class="btn-ghost danger" onclick="delBand(' + b.id + ')">Delete Band</button>'
         + '</div>'
         + '</div>';
     }
-
+ 
     html += '<div class="band-card" id="bc' + b.id + '" style="border-left-color:' + b.color + '">'
       + '<div class="band-head" onclick="toggleBand(' + b.id + ')">'
       + '<div class="band-name-d">' + esc(b.name) + '</div>'
@@ -466,17 +466,17 @@ function renderBands() {
       + bodyHtml
       + '</div>';
   }
-
+ 
   document.getElementById('band-list').innerHTML = html;
 }
-
+ 
 // ── Time calculation ───────────────────────────────────────────────────────
 function toMin(t) {
   if (!t) return 0;
   var parts = t.split(':');
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 }
-
+ 
 function inRange(minOfDay, start, end) {
   var s = toMin(start);
   var e = toMin(end);
@@ -484,27 +484,27 @@ function inRange(minOfDay, start, end) {
   if (s > e) return (minOfDay >= s || minOfDay < e); // crosses midnight
   return (minOfDay >= s && minOfDay < e);
 }
-
+ 
 function rankedBands() {
   return bands.slice().sort(function(a, b) { return (b.rate || 0) - (a.rate || 0); });
 }
-
+ 
 function calcShift(date, startStr, endStr, isPH) {
   var cur = new Date(date + 'T' + startStr);
   var fin = new Date(date + 'T' + endStr);
   if (fin <= cur) fin.setDate(fin.getDate() + 1);
-
+ 
   var ranked = rankedBands();
   var phBand = isPH ? ranked[0] : null;
-
+ 
   var hm = {};   // bandId -> hours
   var pm = {};   // bandId -> pay
-
+ 
   while (cur < fin) {
     var mod = cur.getHours() * 60 + cur.getMinutes();
     var dow = cur.getDay();
     var matched = null;
-
+ 
     if (phBand) {
       matched = phBand;
     } else {
@@ -516,24 +516,24 @@ function calcShift(date, startStr, endStr, isPH) {
         break;
       }
     }
-
+ 
     if (matched) {
       hm[matched.id] = (hm[matched.id] || 0) + (1 / 60);
       pm[matched.id] = (pm[matched.id] || 0) + ((matched.rate || 0) / 60);
     } else {
       hm['x'] = (hm['x'] || 0) + (1 / 60);
     }
-
+ 
     cur = new Date(cur.getTime() + 60000);
   }
-
+ 
   var th = 0, tp = 0;
   for (var k in hm) { th += hm[k]; }
   for (var k in pm) { tp += pm[k]; }
-
+ 
   return { hm: hm, pm: pm, th: th, tp: tp };
 }
-
+ 
 // ── Breakdown HTML builder ─────────────────────────────────────────────────
 function buildBkHtml(c, snap) {
   function resolve(bid) {
@@ -547,7 +547,7 @@ function buildBkHtml(c, snap) {
     }
     return null;
   }
-
+ 
   var rows = '';
   for (var bid in c.hm) {
     var h = c.hm[bid];
@@ -567,13 +567,13 @@ function buildBkHtml(c, snap) {
       + '<div class="bk-calc">' + h.toFixed(2) + 'h x EUR' + (b.rate || 0).toFixed(2) + ' = EUR' + pay.toFixed(2) + '</div>'
       + '</div></div>';
   }
-
+ 
   var warnings = '';
   var unclH = c.hm['x'] || 0;
   if (unclH > 0) {
     warnings += '<div class="warn-box">Warning: ' + unclH.toFixed(2) + 'h did not match any band. Check your band days and times in Setup.</div>';
   }
-
+ 
   var zeroNames = [];
   for (var bid in c.hm) {
     if (bid === 'x') continue;
@@ -583,7 +583,7 @@ function buildBkHtml(c, snap) {
   if (zeroNames.length) {
     warnings += '<div class="warn-box">Rate not set for: ' + zeroNames.join(', ') + '. Add rates in Setup.</div>';
   }
-
+ 
   return '<div class="bk-title">Shift Breakdown</div>'
     + (rows || '<div style="font-size:13px;color:var(--mid);padding:8px 0">No hours matched any band. Check your Setup.</div>')
     + warnings
@@ -592,7 +592,7 @@ function buildBkHtml(c, snap) {
     + '<div class="bk-foot-r">EUR ' + c.tp.toFixed(2) + '</div>'
     + '</div>';
 }
-
+ 
 // ── Log Shift tab ──────────────────────────────────────────────────────────
 function refreshBK() {
   var date  = document.getElementById('l-date').value;
@@ -601,25 +601,25 @@ function refreshBK() {
   var isPH  = document.getElementById('l-ph').checked;
   var wrap  = document.getElementById('bk-wrap');
   var btn   = document.getElementById('add-btn');
-
+ 
   if (!date || !start || !end) {
     wrap.innerHTML = '';
     btn.style.display = 'none';
     return;
   }
-
+ 
   var c = calcShift(date, start, end, isPH);
   wrap.innerHTML = '<div class="bk-card">' + buildBkHtml(c, null) + '</div>';
   btn.style.display = 'block';
 }
-
+ 
 function addShift() {
   var date  = document.getElementById('l-date').value;
   var start = document.getElementById('l-start').value;
   var end   = document.getElementById('l-end').value;
   var isPH  = document.getElementById('l-ph').checked;
   if (!date || !start || !end) return;
-
+ 
   var c = calcShift(date, start, end, isPH);
   shifts.push({
     id: Date.now(),
@@ -628,29 +628,29 @@ function addShift() {
     snap: JSON.parse(JSON.stringify(bands))
   });
   persist();
-
+ 
   document.getElementById('l-start').value = '';
   document.getElementById('l-end').value = '';
   document.getElementById('l-ph').checked = false;
   document.getElementById('bk-wrap').innerHTML = '';
   document.getElementById('add-btn').style.display = 'none';
-
+ 
   toast('Shift added');
   renderSummary();
 }
-
+ 
 // ── Edit shift ─────────────────────────────────────────────────────────────
 function startEdit(id) {
   editingShiftId = id;
   renderSummary();
   setTimeout(function() { refreshEditBK(id); }, 0);
 }
-
+ 
 function cancelEdit() {
   editingShiftId = null;
   renderSummary();
 }
-
+ 
 function refreshEditBK(id) {
   var dateEl  = document.getElementById('ed-date-' + id);
   var startEl = document.getElementById('ed-start-' + id);
@@ -658,48 +658,48 @@ function refreshEditBK(id) {
   var phEl    = document.getElementById('ed-ph-' + id);
   var bkEl    = document.getElementById('ed-bk-' + id);
   if (!dateEl || !startEl || !endEl || !bkEl) return;
-
+ 
   var date  = dateEl.value;
   var start = startEl.value;
   var end   = endEl.value;
   var isPH  = phEl ? phEl.checked : false;
-
+ 
   if (!date || !start || !end) { bkEl.innerHTML = ''; return; }
-
+ 
   var c = calcShift(date, start, end, isPH);
   bkEl.innerHTML = '<div class="bk-card" style="box-shadow:none;border:1px solid var(--border)">' + buildBkHtml(c, null) + '</div>';
 }
-
+ 
 function saveEdit(id) {
   var dateEl  = document.getElementById('ed-date-' + id);
   var startEl = document.getElementById('ed-start-' + id);
   var endEl   = document.getElementById('ed-end-' + id);
   var phEl    = document.getElementById('ed-ph-' + id);
   if (!dateEl || !startEl || !endEl) { toast('Fill in all fields'); return; }
-
+ 
   var date  = dateEl.value;
   var start = startEl.value;
   var end   = endEl.value;
   var isPH  = phEl ? phEl.checked : false;
   if (!date || !start || !end) { toast('Fill in all fields'); return; }
-
+ 
   var c = calcShift(date, start, end, isPH);
   var s = null;
   for (var i = 0; i < shifts.length; i++) {
     if (shifts[i].id === id) { s = shifts[i]; break; }
   }
   if (!s) return;
-
+ 
   s.date = date; s.start = start; s.end = end; s.isPH = isPH;
   s.hm = c.hm; s.pm = c.pm; s.th = c.th; s.tp = c.tp;
   s.snap = JSON.parse(JSON.stringify(bands));
-
+ 
   persist();
   editingShiftId = null;
   toast('Shift updated');
   renderSummary();
 }
-
+ 
 function toggleEditPH(id) {
   var cb = document.getElementById('ed-ph-' + id);
   if (cb) {
@@ -707,7 +707,7 @@ function toggleEditPH(id) {
     refreshEditBK(id);
   }
 }
-
+ 
 // ── Summary ────────────────────────────────────────────────────────────────
 function setFilter(f, el) {
   activeFilter = f;
@@ -715,7 +715,7 @@ function setFilter(f, el) {
   el.classList.add('on');
   renderSummary();
 }
-
+ 
 function getFiltered() {
   var now = new Date();
   if (activeFilter === 'month') {
@@ -732,16 +732,16 @@ function getFiltered() {
   }
   return shifts.slice();
 }
-
+ 
 function renderSummary() {
   var list = getFiltered().sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
   var el = document.getElementById('summary-body');
-
+ 
   if (!list.length) {
     el.innerHTML = '<div class="empty"><div class="empty-icon">&#128203;</div><div class="empty-text">No shifts logged yet.<br>Head to <b>Log Shift</b> to get started.</div></div>';
     return;
   }
-
+ 
   // Aggregate totals
   var tH = {}, tP = {}, grand = 0, allH = 0;
   list.forEach(function(s) {
@@ -750,7 +750,7 @@ function renderSummary() {
     grand += s.tp;
     allH  += s.th;
   });
-
+ 
   function resolve(bid, snap) {
     var id = parseInt(bid, 10);
     var b = getBand(id);
@@ -762,7 +762,7 @@ function renderSummary() {
     }
     return null;
   }
-
+ 
   // Band tiles
   var tilesHtml = '';
   for (var bid in tH) {
@@ -776,7 +776,7 @@ function renderSummary() {
       + '<div class="bnd-pay">EUR ' + (tP[bid] || 0).toFixed(2) + '</div>'
       + '</div>';
   }
-
+ 
   // Shift rows
   var rowsHtml = '';
   for (var i = 0; i < list.length; i++) {
@@ -784,7 +784,7 @@ function renderSummary() {
     var d  = new Date(s.date + 'T12:00:00');
     var ds = d.toLocaleDateString('en-IE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     var phFlag = s.isPH ? ' &#127987;' : '';
-
+ 
     if (editingShiftId === s.id) {
       rowsHtml += '<div class="sh-item">'
         + '<div class="sh-main">'
@@ -811,7 +811,7 @@ function renderSummary() {
         + '</div></div></div>';
       continue;
     }
-
+ 
     // Tags
     var tags = '';
     for (var bid in s.hm) {
@@ -821,7 +821,7 @@ function renderSummary() {
       var color = b ? b.color : '#ccc';
       tags += '<span class="tag" style="background:' + color + '18;color:' + color + '">' + esc(name) + ' ' + s.hm[bid].toFixed(1) + 'h</span>';
     }
-
+ 
     rowsHtml += '<div class="sh-item"><div class="sh-main">'
       + '<div class="sh-top">'
       + '<div><div class="sh-date">' + ds + phFlag + '</div>'
@@ -835,7 +835,7 @@ function renderSummary() {
       + '<div class="tag-row">' + tags + '</div>'
       + '</div></div>';
   }
-
+ 
   var lbl = activeFilter === 'all' ? 'All Time' : activeFilter === 'month' ? 'This Month' : 'This Week';
   el.innerHTML = '<div class="hero">'
     + '<div class="hero-lbl">Gross Pay &mdash; ' + lbl + '</div>'
@@ -845,12 +845,12 @@ function renderSummary() {
     + (tilesHtml ? '<div class="band-grid">' + tilesHtml + '</div>' : '')
     + '<div class="list-head">Shift Log</div>'
     + rowsHtml;
-
+ 
   if (editingShiftId) {
     setTimeout(function() { refreshEditBK(editingShiftId); }, 0);
   }
 }
-
+ 
 function delShift(id) {
   if (!confirm('Remove this shift?')) return;
   shifts = shifts.filter(function(s) { return s.id !== id; });
@@ -858,7 +858,7 @@ function delShift(id) {
   renderSummary();
   toast('Shift removed');
 }
-
+ 
 function clearAll() {
   if (!confirm('Delete all logged shifts? This cannot be undone.')) return;
   shifts = [];
@@ -867,7 +867,7 @@ function clearAll() {
   renderSummary();
   toast('Cleared');
 }
-
+ 
 // ── Navigation ─────────────────────────────────────────────────────────────
 function go(pg, btn) {
   document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('on'); });
@@ -880,7 +880,7 @@ function go(pg, btn) {
   }
   if (pg === 'summary') renderSummary();
 }
-
+ 
 // ── PWA manifest ───────────────────────────────────────────────────────────
 function injectPWA() {
   var svg  = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231c7244'/><text y='68' x='50' font-size='50' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>SP</text></svg>";
@@ -896,7 +896,7 @@ function injectPWA() {
     document.head.appendChild(link);
   } catch(e) {}
 }
-
+ 
 // ── Utility ────────────────────────────────────────────────────────────────
 function esc(str) {
   return String(str)
@@ -905,14 +905,14 @@ function esc(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
-
+ 
 function toast(msg) {
   var t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('on');
   setTimeout(function() { t.classList.remove('on'); }, 2000);
 }
-
+ 
 // ── Init ───────────────────────────────────────────────────────────────────
 loadData();
 renderBands();
