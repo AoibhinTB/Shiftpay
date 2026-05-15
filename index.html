@@ -340,6 +340,7 @@ var editingShiftId = null;
 var payPeriod     = 'monthly'; // 'weekly', 'biweekly', 'monthly'
 var openPeriodKey       = null;
 var confirmDeleteBandId = null;
+var hasInitedPeriod     = false;
 
 // ── Persist ────────────────────────────────────────────────
 function persist() {
@@ -832,10 +833,6 @@ function togglePeriod(key) {
   renderSummary();
 }
 
-function initOpenPeriod() {
-  if (openPeriodKey === null) openPeriodKey = currentPeriodKeyOffset(0);
-}
-
 function renderSummary() {
   var el = document.getElementById('summary-body');
   var now = new Date();
@@ -888,7 +885,7 @@ function renderSummary() {
 
   var periodKeys = Object.keys(periodMap).map(Number).sort(function(a,b){ return b - a; });
   var currentKey = currentPeriodKeyOffset(0);
-  if (openPeriodKey === null) openPeriodKey = currentKey;
+  if (!hasInitedPeriod && periodKeys.length) { openPeriodKey = currentKey; hasInitedPeriod = true; }
 
   function resolve(bid, snap) {
     var id=parseInt(bid,10); var b=getBand(id); if(b)return b;
