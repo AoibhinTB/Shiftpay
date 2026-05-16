@@ -624,7 +624,7 @@ function renderTemplates(){
       +'<div class="field"><label class="lbl">Break Mins</label><input type="number" id="tbm-'+t.id+'" value="'+(t.breakM||'')+'" placeholder="0" min="0" max="59" step="1" style="text-align:center"></div>'
       +'</div></div>'
       +'<div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid var(--border);padding-top:10px">'
-      +'<button class="btn-ghost" style="flex:1" onclick="saveTemplate('+t.id+')">Save</button>'
+      +'<button class="btn-primary" style="flex:1;margin-top:0" onclick="saveTemplate('+t.id+')">Save</button>'
       +'<button class="btn-ghost danger" onclick="deleteTemplate('+t.id+')">Delete</button>'
       +'</div></div>':'';
     return '<div style="background:var(--white);border-radius:var(--r-sm);box-shadow:var(--shadow);margin-bottom:8px;overflow:hidden">'
