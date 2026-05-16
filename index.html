@@ -343,6 +343,15 @@
   <button class="btn-outline-danger" onclick="clearAll()">Clear All Shifts</button>
 </div>
 
+<div id="install-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:24px" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:var(--white);border-radius:var(--r);padding:22px;max-width:360px;width:100%">
+    <div style="font-size:16px;font-weight:700;margin-bottom:14px">Save to your home screen</div>
+    <div style="font-size:13px;color:var(--mid);margin-bottom:10px;line-height:1.6"><b style="color:var(--text)">iPhone:</b> Open in Safari, tap the <b style="color:var(--text)">Share</b> button at the bottom, then scroll down and tap <b style="color:var(--text)">Add to Home Screen</b></div>
+    <div style="font-size:13px;color:var(--mid);margin-bottom:18px;line-height:1.6"><b style="color:var(--text)">Android:</b> Open in Chrome, tap the <b style="color:var(--text)">three-dot menu</b> at the top right, then tap <b style="color:var(--text)">Add to Home screen</b></div>
+    <button onclick="document.getElementById('install-modal').style.display='none'" style="width:100%;background:var(--blue);color:#fff;border:none;border-radius:var(--r-sm);font-family:'Geist',sans-serif;font-size:14px;font-weight:700;padding:13px;cursor:pointer">Got it</button>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script>
@@ -646,7 +655,10 @@ function deleteTemplate(id){shiftTemplates=shiftTemplates.filter(function(t){ret
 // Navigation
 function toggleDataMenu(){var m=document.getElementById('data-menu');if(m)m.style.display=m.style.display==='none'?'block':'none';}
 document.addEventListener('click',function(e){var menu=document.getElementById('data-menu');if(!menu||menu.style.display==='none')return;var toggle=e.target.closest?e.target.closest('[onclick="toggleDataMenu()"]'):null;if(!toggle&&!menu.contains(e.target))menu.style.display='none';});
-function showInstall(){document.getElementById('data-menu').style.display='none';toast('iPhone: Share \u2192 Add to Home Screen \u00b7 Android: \u22ee \u2192 Add to Home screen');}
+function showInstall(){
+  document.getElementById('data-menu').style.display='none';
+  document.getElementById('install-modal').style.display='flex';
+}
 
 function go(pg,btn){
   var dm=document.getElementById('data-menu');if(dm)dm.style.display='none';
