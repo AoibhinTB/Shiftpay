@@ -28,7 +28,7 @@
     /* Header */
     .hdr { background: var(--white); border-bottom: 1px solid var(--border); padding: 14px 16px 10px; position: sticky; top: 0; z-index: 100; }
     .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .brand span { font-family: 'Geist', sans-serif; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--blue); }
+    .brand span { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--blue); }
     .tabs { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: calc(var(--r) + 2px); padding: 3px; }
     .tb { flex: 1; border: none; background: transparent; border-radius: var(--r-sm); color: var(--dim); font-family: 'Geist', sans-serif; font-size: 12px; font-weight: 600; padding: 8px 4px; cursor: pointer; transition: all .18s; }
     .tb.on { background: var(--white); color: var(--blue); box-shadow: var(--shadow); }
@@ -190,7 +190,9 @@
 <div class="hdr">
   <div class="brand">
     <img id="brand-mark" style="width:32px;height:32px;border-radius:50%" alt="ShiftPay">
-    <span style="font-family:'Fraunces',serif;font-weight:700;font-size:21px;letter-spacing:-0.02em;color:var(--blue)">$hiftPay</span>
+    <span style="font-family:'Fraunces',serif;font-weight:600;font-size:22px;color:var(--blue);letter-spacing:-0.025em;line-height:1;display:inline-flex;align-items:baseline">
+      <span>Shi</span><span style="position:relative;display:inline-block">f<span style="position:absolute;left:50%;top:-0.55em;transform:translateX(-50%);font-size:0.42em;line-height:1;pointer-events:none">💩</span></span><span>tPay</span>
+    </span>
   </div>
   <div class="tabs">
     <button class="tb on" onclick="go('setup', this)">Setup</button>
@@ -318,6 +320,13 @@
 <div class="page" id="pg-summary">
   <div class="pg-title">Pay Summary</div>
   <div id="summary-body"></div>
+  <div class="divider"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+    <button class="btn-secondary" style="margin-top:0;font-size:12px" onclick="exportBackup()">&#8681; Back up my data</button>
+    <button class="btn-secondary" style="margin-top:0;font-size:12px" onclick="exportSpreadsheet()">&#8681; Download as spreadsheet</button>
+  </div>
+  <button class="btn-secondary" style="font-size:12px" onclick="importBackup()">&#8679; Restore from backup</button>
+  <input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImport(event)">
   <div class="divider"></div>
   <button class="btn-outline-danger" onclick="clearAll()">Clear All Shifts</button>
 </div>
@@ -1020,6 +1029,111 @@ function renderSummary() {
 
 function delShift(id) { shifts=shifts.filter(function(s){return s.id!==id;}); persist(); renderSummary(); toast('Shift removed'); }
 function clearAll() { shifts=[]; manualEntries=[]; persist(); editingShiftId=null; renderSummary(); toast('All shifts cleared'); }
+
+// ── Export / Import ────────────────────────────────────────
+function exportBackup() {
+  var data = { bands: bands, shifts: shifts, manualEntries: manualEntries, payPeriod: payPeriod, savedOn: new Date().toLocaleDateString('en-IE') };
+  var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'shiftpay-backup-' + new Date().toISOString().split('T')[0] + '.json';
+  a.click();
+  toast('Backup downloaded');
+}
+
+function exportSpreadsheet() {
+  var rows = [['Date', 'Day', 'Start', 'End', 'Total Hours', 'Break (mins)', 'Band', 'Hours in Band', 'Rate (€/hr)', 'Pay (€)', 'Bank Holiday', 'Notes']];
+
+  shifts.forEach(function(s) {
+    var d = new Date(s.date + 'T12:00');
+    var dayName = d.toLocaleDateString('en-IE', { weekday: 'long' });
+    var dateStr = d.toLocaleDateString('en-IE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    var bh = (s.bhDates && s.bhDates.length) ? 'Yes' : 'No';
+    var firstRow = true;
+    var hasBands = false;
+
+    for (var bid in s.hm) {
+      if (bid === 'x' || !(s.hm[bid] > 0)) continue;
+      hasBands = true;
+      var b = getBand(parseInt(bid, 10));
+      if (!b && s.snap) { for (var i = 0; i < s.snap.length; i++) { if (s.snap[i].id === parseInt(bid,10)) { b = s.snap[i]; break; } } }
+      var bandName = b ? b.name : 'Unknown';
+      var rate = b ? (b.rate || 0) : 0;
+      rows.push([
+        firstRow ? dateStr : '',
+        firstRow ? dayName : '',
+        firstRow ? s.start : '',
+        firstRow ? s.end : '',
+        firstRow ? s.th.toFixed(2) : '',
+        firstRow ? (s.breakMins || 0) : '',
+        bandName,
+        s.hm[bid].toFixed(2),
+        rate.toFixed(2),
+        (s.pm[bid] || 0).toFixed(2),
+        firstRow ? bh : '',
+        ''
+      ]);
+      firstRow = false;
+    }
+    if (!hasBands) {
+      rows.push([dateStr, dayName, s.start, s.end, s.th.toFixed(2), s.breakMins||0, '', '', '', s.tp.toFixed(2), bh, '']);
+    }
+  });
+
+  manualEntries.forEach(function(m) {
+    var d = new Date(m.date + 'T12:00');
+    var dayName = d.toLocaleDateString('en-IE', { weekday: 'long' });
+    var dateStr = d.toLocaleDateString('en-IE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    rows.push([dateStr, dayName, m.start || '', m.end || '', '', '', 'Manual: ' + m.desc, '', '', m.amount.toFixed(2), '', '']);
+  });
+
+  var csv = rows.map(function(r) {
+    return r.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
+  }).join('\n');
+
+  var blob = new Blob([csv], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'shiftpay-shifts-' + new Date().toISOString().split('T')[0] + '.csv';
+  a.click();
+  toast('Spreadsheet downloaded');
+}
+
+function importBackup() {
+  document.getElementById('import-file').click();
+}
+
+function handleImport(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      var data = JSON.parse(ev.target.result);
+      if (!data.bands || !data.shifts) { toast('File not recognised'); return; }
+      bands         = data.bands;
+      shifts        = data.shifts;
+      manualEntries = data.manualEntries || [];
+      if (data.payPeriod) payPeriod = data.payPeriod;
+      // Recalculate nextId to avoid collisions
+      var maxId = 1;
+      bands.forEach(function(b){ if(b.id>=maxId) maxId=b.id+1; });
+      shifts.forEach(function(s){ if(s.id>=maxId) maxId=s.id+1; });
+      nextId = maxId;
+      persist();
+      hasInitedPeriod = false;
+      renderBands();
+      renderSummary();
+      var ppSel = document.getElementById('pay-period-select');
+      if (ppSel) ppSel.value = payPeriod;
+      toast('Data restored from backup');
+    } catch(err) {
+      toast('Could not read file');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
 
 // ── Navigation ─────────────────────────────────────────────
 function go(pg, btn) {
