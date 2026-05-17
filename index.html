@@ -362,6 +362,7 @@ var bands=[],shifts=[],manualEntries=[],payPeriod='monthly',nextId=1;
 var openBandId=null,editingShiftId=null,openPeriodKey=null;
 var confirmDeleteBandId=null,hasInitedPeriod=false;
 var shiftTemplates=[],editingTemplateId=null;
+var closedYears={},closedMonths={};
 
 function persist(){try{localStorage.setItem('sp_b',JSON.stringify(bands));localStorage.setItem('sp_s',JSON.stringify(shifts));localStorage.setItem('sp_me',JSON.stringify(manualEntries));localStorage.setItem('sp_n',String(nextId));localStorage.setItem('sp_pp',payPeriod);localStorage.setItem('sp_tmpl',JSON.stringify(shiftTemplates));}catch(e){}}
 function loadData(){try{var b=localStorage.getItem('sp_b');var s=localStorage.getItem('sp_s');var me=localStorage.getItem('sp_me');var n=localStorage.getItem('sp_n');var pp=localStorage.getItem('sp_pp');var tmpl=localStorage.getItem('sp_tmpl');if(b)bands=JSON.parse(b);if(s)shifts=JSON.parse(s);if(me)manualEntries=JSON.parse(me);if(n)nextId=parseInt(n)||1;if(pp)payPeriod=pp;if(tmpl)shiftTemplates=JSON.parse(tmpl);}catch(e){}if(!bands.length)loadDefaults();ensureLockedBands();}
@@ -548,6 +549,10 @@ function periodKeyToDate(key){if(payPeriod==='monthly'){return new Date(Math.flo
 function getPeriodName(key,isCurrent){var d=periodKeyToDate(key),suffix=isCurrent?' (current)':'';if(payPeriod==='monthly')return d.toLocaleDateString('en-IE',{month:'long',year:'numeric'})+suffix;if(payPeriod==='weekly')return 'Week of '+d.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'})+suffix;var end=new Date(d);end.setDate(d.getDate()+13);return d.toLocaleDateString('en-IE',{day:'numeric',month:'short'})+'\u2013'+end.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'})+suffix;}
 function payPeriodLabel(){if(payPeriod==='weekly')return 'week';if(payPeriod==='biweekly')return 'fortnight';return 'month';}
 
+function toggleYear(yr){closedYears[yr]=!closedYears[yr];renderSummary();}
+function toggleMonth(mk){closedMonths[mk]=!closedMonths[mk];renderSummary();}
+function periodToMonthKey(key){var d=periodKeyToDate(key);return d.getFullYear()*100+d.getMonth();}
+function monthKeyName(mk){var d=new Date(Math.floor(mk/100),mk%100,1);return d.toLocaleDateString('en-IE',{month:'long',year:'numeric'});}
 function togglePeriod(key){openPeriodKey=(openPeriodKey===key)?null:key;renderSummary();}
 
 function renderSummary(){
@@ -559,7 +564,7 @@ function renderSummary(){
   shifts.forEach(function(s){if(shiftContributes(s)){for(var bid in s.pm)nextPay+=bandPayForShift(s,bid);}});
   manualEntries.forEach(function(m){if(manualContributes(m))nextPay+=m.amount;});
   if(!shifts.length&&!manualEntries.length){el.innerHTML='<div class="empty"><div class="empty-icon">&#128203;</div><div class="empty-text">No shifts logged yet.<br>Head to <b>Log Shift</b> to get started.</div></div>';return;}
-  var pl=payPeriodLabel(),arrearsNote='<div class="hero-arrears-note">Base pay this '+pl+' + rostered OT from last '+pl+'<br>+ unrostered OT from 2 '+pl+'s ago</div>';
+  var pl=payPeriodLabel(),arrearsNote='<div class="hero-arrears-note">Pay earned this '+pl+', plus deferred amounts from previous '+pl+'s</div>';
   var periodMap={};
   shifts.forEach(function(s){var k=getPeriodKey(s.date);if(!periodMap[k])periodMap[k]={shifts:[],manuals:[]};periodMap[k].shifts.push(s);});
   manualEntries.forEach(function(m){var k=getPeriodKey(m.date);if(!periodMap[k])periodMap[k]={shifts:[],manuals:[]};periodMap[k].manuals.push(m);});
@@ -567,8 +572,29 @@ function renderSummary(){
   var currentKey=currentPeriodKeyOffset(0);
   if(!hasInitedPeriod&&periodKeys.length){openPeriodKey=currentKey;hasInitedPeriod=true;}
   function resolve(bid,snap){var id=parseInt(bid,10);var b=getBand(id);if(b)return b;if(snap){for(var i=0;i<snap.length;i++){if(snap[i].id===id)return snap[i];}}return null;}
+  // Group by year > month for nested collapsing
+  var years={},yearOrder=[];
+  periodKeys.forEach(function(k){var yr=periodKeyToDate(k).getFullYear(),mk=periodToMonthKey(k);if(!years[yr]){years[yr]={};yearOrder.push(yr);}if(!years[yr][mk])years[yr][mk]=[];years[yr][mk].push(k);});
+  var multiYear=yearOrder.length>1,multiMonth=periodKeys.length>1;
   var periodCards='';
-  periodKeys.forEach(function(k){
+
+  yearOrder.forEach(function(yr){
+    var monthKeys=Object.keys(years[yr]).map(Number).sort(function(a,b){return b-a;});
+    var yrOpen=!closedYears[yr];
+    if(multiYear){periodCards+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px 4px;cursor:pointer" onclick="toggleYear('+yr+')"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid)">'+yr+'</div><div style="color:var(--dim);font-size:13px;transition:transform .2s;'+(yrOpen?'transform:rotate(180deg)':'')+'">&#9662;</div></div>';}
+    if(!yrOpen&&multiYear)return;
+
+    monthKeys.forEach(function(mk){
+      var mPeriods=years[yr][mk];
+      var mkOpen=!closedMonths[mk];
+      var isCurrentMonth=mPeriods.some(function(k){return k===currentKey;});
+      var pad=multiYear?'margin-left:8px;':'';
+      if(multiMonth&&mPeriods.length>0&&(multiYear||Object.keys(years[yr]).length>1||multiYear)){
+        periodCards+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 2px 4px;cursor:pointer;'+pad+'" onclick="toggleMonth('+mk+')"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:'+(isCurrentMonth?'var(--blue)':'var(--mid)')+'">'+monthKeyName(mk)+'</div><div style="color:var(--dim);font-size:12px;transition:transform .2s;'+(mkOpen?'transform:rotate(180deg)':'')+'">&#9662;</div></div>';
+      }
+      if(!mkOpen&&multiMonth)return;
+      var indent=multiYear?'margin-left:8px;':'';
+      mPeriods.forEach(function(k){
     var isCurrent=(k===currentKey),name=getPeriodName(k,isCurrent),data=periodMap[k],open=(openPeriodKey===k);
     var periodPay=0,periodHrs=0,bandTotals={};
     data.shifts.forEach(function(s){periodHrs+=s.th;for(var bid in s.hm){if(bid==='x')continue;var b=resolve(bid,s.snap);if(!bandTotals[bid])bandTotals[bid]={name:b?b.name:'Band',color:b?b.color:'#ccc',hrs:0,pay:0};bandTotals[bid].hrs+=s.hm[bid]||0;bandTotals[bid].pay+=s.pm[bid]||0;periodPay+=s.pm[bid]||0;}});
@@ -606,8 +632,11 @@ function renderSummary(){
     var bandSummary='';
     if(open){var activeBands=Object.keys(bandTotals).filter(function(bid){return bandTotals[bid].hrs>0;});if(activeBands.length){bandSummary='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';activeBands.forEach(function(bid){var bt=bandTotals[bid];bandSummary+='<div style="background:'+bt.color+'18;border-radius:var(--r-sm);padding:8px 12px"><div style="font-size:10px;font-weight:700;color:'+bt.color+';text-transform:uppercase;letter-spacing:.3px">'+esc(bt.name)+'</div><div style="font-size:16px;font-weight:800;margin-top:2px">'+bt.hrs.toFixed(1)+'h</div><div style="font-size:11px;color:var(--mid)">\u20ac'+bt.pay.toFixed(2)+'</div></div>';});bandSummary+='</div>';}}
     var borderColor=isCurrent?'var(--blue)':'var(--border)',bgColor=isCurrent?'var(--blue-lt)':'var(--white)',nameColor=isCurrent?'var(--blue)':'var(--text)';
-    periodCards+='<div style="border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-bottom:12px;border:1.5px solid '+borderColor+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:14px 15px;cursor:pointer;background:'+bgColor+'" onclick="togglePeriod('+k+')"><div><div style="font-size:14px;font-weight:700;color:'+nameColor+'">'+name+'</div><div style="font-size:11px;color:var(--mid);margin-top:2px">'+allItems.length+' entr'+(allItems.length!==1?'ies':'y')+' &middot; '+periodHrs.toFixed(1)+'h worked</div></div><div style="display:flex;align-items:center;gap:10px"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:'+nameColor+'">\u20ac'+periodPay.toFixed(2)+'</div><div style="color:var(--dim);font-size:13px;transition:transform .2s;'+(open?'transform:rotate(180deg)':'')+'">&#9662;</div></div></div>'+(open?'<div style="border-top:1px solid var(--border);padding:13px;background:var(--white)">'+bandSummary+shiftRows+'</div>':'')+'</div>';
-  });
+        periodCards+='<div style="border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-bottom:8px;'+indent+'border:1.5px solid '+borderColor+'"><div style="display:flex;justify-content:space-between;align-items:center;padding:14px 15px;cursor:pointer;background:'+bgColor+'" onclick="togglePeriod('+k+')"><div><div style="font-size:14px;font-weight:700;color:'+nameColor+'">'+name+'</div><div style="font-size:11px;color:var(--mid);margin-top:2px">'+allItems.length+' entr'+(allItems.length!==1?'ies':'y')+' &middot; '+periodHrs.toFixed(1)+'h worked</div></div><div style="display:flex;align-items:center;gap:10px"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:'+nameColor+'">\u20ac'+periodPay.toFixed(2)+'</div><div style="color:var(--dim);font-size:13px;transition:transform .2s;'+(open?'transform:rotate(180deg)':'')+'">&#9662;</div></div></div>'+(open?'<div style="border-top:1px solid var(--border);padding:13px;background:var(--white)">'+bandSummary+shiftRows+'</div>':'')+'</div>';
+      }); // end mPeriods.forEach
+    }); // end monthKeys.forEach
+  }); // end yearOrder.forEach
+
   el.innerHTML='<div class="hero"><div class="hero-lbl">Next Payslip (est.)</div><div class="hero-amt">\u20ac'+nextPay.toFixed(2)+'</div>'+arrearsNote+'</div><div class="list-head" style="margin-top:4px">Shift History by Period</div>'+periodCards;
   if(editingShiftId)setTimeout(function(){refreshEditBK(editingShiftId);},0);
 }
@@ -665,7 +694,7 @@ function go(pg,btn){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('on');});
   document.querySelectorAll('.tb').forEach(function(b){b.classList.remove('on');});
   document.getElementById('pg-'+pg).classList.add('on');btn.classList.add('on');
-  if(pg==='log'){var d=document.getElementById('l-date');if(!d.value)d.value=new Date().toISOString().split('T')[0];var sEl=document.getElementById('l-start'),eEl=document.getElementById('l-end');if(!sEl.value&&!eEl.value){var base=null;for(var bi=0;bi<bands.length;bi++){if(bands[bi].locked==='base'){base=bands[bi];break;}}if(base){sEl.value=base.start;eEl.value=base.end;refreshBK();}}renderTemplateBtns();}
+  if(pg==='log'){var d=document.getElementById('l-date');if(!d.value)d.value=new Date().toISOString().split('T')[0];renderTemplateBtns();}
   if(pg==='summary')renderSummary();
   if(pg==='setup'){renderTemplates();var ppSel=document.getElementById('pay-period-select');if(ppSel)ppSel.value=payPeriod;}
 }
@@ -692,12 +721,8 @@ function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.c
 loadData();
 var ppSel=document.getElementById('pay-period-select');if(ppSel)ppSel.value=payPeriod;
 renderBands();renderTemplateBtns();injectPWA();
-// Auto-fill log shift form on load
-(function(){
-  var d=document.getElementById('l-date'); if(d&&!d.value) d.value=new Date().toISOString().split('T')[0];
-  var sEl=document.getElementById('l-start'),eEl=document.getElementById('l-end');
-  if(sEl&&eEl&&!sEl.value&&!eEl.value){var base=null;for(var bi=0;bi<bands.length;bi++){if(bands[bi].locked==='base'){base=bands[bi];break;}}if(base){sEl.value=base.start;eEl.value=base.end;}}
-})();
+// Set today's date on log shift form on load
+(function(){var d=document.getElementById('l-date');if(d&&!d.value)d.value=new Date().toISOString().split('T')[0];})();
 </script>
 </body>
 </html>
