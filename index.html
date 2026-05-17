@@ -546,7 +546,7 @@ function getMondayDate(d){var day=d.getDay(),diff=day===0?-6:1-day;return new Da
 function getPeriodKey(dateStr){var d=new Date(dateStr.split('T')[0]+'T12:00:00');if(payPeriod==='monthly')return d.getFullYear()*100+d.getMonth();var mon=getMondayDate(d);if(payPeriod==='weekly')return mon.getFullYear()*10000+(mon.getMonth()+1)*100+mon.getDate();var anchor=new Date(2024,0,1),daysDiff=Math.round((mon-anchor)/86400000);return Math.floor(daysDiff/14);}
 function currentPeriodKeyOffset(n){var now=new Date();if(payPeriod==='monthly'){var d=new Date(now.getFullYear(),now.getMonth()-n,1);return d.getFullYear()*100+d.getMonth();}var mon=getMondayDate(now),size=payPeriod==='weekly'?7:14;mon.setDate(mon.getDate()-n*size);if(payPeriod==='weekly')return mon.getFullYear()*10000+(mon.getMonth()+1)*100+mon.getDate();var anchor=new Date(2024,0,1);return Math.floor(Math.round((mon-anchor)/86400000)/14);}
 function periodKeyToDate(key){if(payPeriod==='monthly'){return new Date(Math.floor(key/100),key%100,1);}if(payPeriod==='weekly'){var y=Math.floor(key/10000),m=Math.floor((key%10000)/100)-1,d=key%100;return new Date(y,m,d);}var anchor=new Date(2024,0,1),r=new Date(anchor);r.setDate(anchor.getDate()+key*14);return r;}
-function getPeriodName(key,isCurrent){var d=periodKeyToDate(key),suffix=isCurrent?' (current)':'';if(payPeriod==='monthly')return d.toLocaleDateString('en-IE',{month:'long',year:'numeric'})+suffix;if(payPeriod==='weekly')return 'Week of '+d.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'})+suffix;var end=new Date(d);end.setDate(d.getDate()+13);return d.toLocaleDateString('en-IE',{day:'numeric',month:'short'})+'\u2013'+end.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'})+suffix;}
+function getPeriodName(key,isCurrent){var d=periodKeyToDate(key);if(payPeriod==='monthly')return d.toLocaleDateString('en-IE',{month:'long',year:'numeric'});if(payPeriod==='weekly')return 'Week of '+d.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'});var end=new Date(d);end.setDate(d.getDate()+13);return d.toLocaleDateString('en-IE',{day:'numeric',month:'short'})+'\u2013'+end.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'});}
 function payPeriodLabel(){if(payPeriod==='weekly')return 'week';if(payPeriod==='biweekly')return 'fortnight';return 'month';}
 
 function toggleYear(yr){closedYears[yr]=!closedYears[yr];renderSummary();}
@@ -581,7 +581,7 @@ function renderSummary(){
   yearOrder.forEach(function(yr){
     var monthKeys=Object.keys(years[yr]).map(Number).sort(function(a,b){return b-a;});
     var yrOpen=!closedYears[yr];
-    if(multiYear){periodCards+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px 4px;cursor:pointer" onclick="toggleYear('+yr+')"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid)">'+yr+'</div><div style="color:var(--dim);font-size:13px;transition:transform .2s;'+(yrOpen?'transform:rotate(180deg)':'')+'">&#9662;</div></div>';}
+    if(multiYear){periodCards+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px 4px;cursor:pointer" onclick="toggleYear('+yr+')"><div style="font-size:15px;font-weight:700;color:var(--text)">'+yr+'</div><div style="color:var(--dim);font-size:13px;transition:transform .2s;'+(yrOpen?'transform:rotate(180deg)':'')+'">&#9662;</div></div>';}
     if(!yrOpen&&multiYear)return;
 
     monthKeys.forEach(function(mk){
@@ -590,7 +590,7 @@ function renderSummary(){
       var isCurrentMonth=mPeriods.some(function(k){return k===currentKey;});
       var pad=multiYear?'margin-left:8px;':'';
       if(multiMonth&&mPeriods.length>0&&(multiYear||Object.keys(years[yr]).length>1||multiYear)){
-        periodCards+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 2px 4px;cursor:pointer;'+pad+'" onclick="toggleMonth('+mk+')"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:'+(isCurrentMonth?'var(--blue)':'var(--mid)')+'">'+monthKeyName(mk)+'</div><div style="color:var(--dim);font-size:12px;transition:transform .2s;'+(mkOpen?'transform:rotate(180deg)':'')+'">&#9662;</div></div>';
+        periodCards+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 2px 4px;cursor:pointer;'+pad+'" onclick="toggleMonth('+mk+')"><div style="font-size:14px;font-weight:700;color:'+(isCurrentMonth?'var(--blue)':'var(--text)')+'">'+monthKeyName(mk)+'</div><div style="color:var(--dim);font-size:12px;transition:transform .2s;'+(mkOpen?'transform:rotate(180deg)':'')+'">&#9662;</div></div>';
       }
       if(!mkOpen&&multiMonth)return;
       var indent=multiYear?'margin-left:8px;':'';
@@ -637,7 +637,7 @@ function renderSummary(){
     }); // end monthKeys.forEach
   }); // end yearOrder.forEach
 
-  el.innerHTML='<div class="hero"><div class="hero-lbl">Next Payslip (est.)</div><div class="hero-amt">\u20ac'+nextPay.toFixed(2)+'</div>'+arrearsNote+'</div><div class="list-head" style="margin-top:4px">Shift History by Period</div>'+periodCards;
+  el.innerHTML='<div class="hero"><div class="hero-lbl">Next Payslip (Est. Gross)</div><div class="hero-amt">\u20ac'+nextPay.toFixed(2)+'</div>'+arrearsNote+'</div><div class="list-head" style="margin-top:4px">Shift History by Period</div>'+periodCards;
   if(editingShiftId)setTimeout(function(){refreshEditBK(editingShiftId);},0);
 }
 
@@ -713,6 +713,10 @@ function injectPWA(){
   var isStandalone=window.navigator.standalone===true||window.matchMedia('(display-mode: standalone)').matches;
   if(isStandalone){var card=document.getElementById('install-card');if(card)card.style.display='none';}
   try{var m={name:'ShiftPay',short_name:'ShiftPay',start_url:location.href,display:'standalone',background_color:'#f5f1e8',theme_color:'#1f4d8a',icons:[{src:icon,sizes:'1024x1024',type:'image/png'}]};var blob=new Blob([JSON.stringify(m)],{type:'application/manifest+json'});var link=document.createElement('link');link.rel='manifest';link.href=URL.createObjectURL(blob);document.head.appendChild(link);}catch(e){}
+  // Register service worker for auto-updates
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
+  }
 }
 
 function esc(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
