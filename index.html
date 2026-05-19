@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>ShiftPay</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ShiftPay">
-<meta name="theme-color" content="#1f4d8a">
+<meta name="theme-color" content="#f5f1e8">
 <link rel="apple-touch-icon" id="ati" href="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,8 +22,8 @@ html,body{height:100%;background:#ece5d3;font-family:'Geist',system-ui,sans-seri
   --line:#e6dfca;--line-soft:#efe9d4;--pos:#2f7d52;--warn:#b8632a;--bh:#7a3a8a;
   --r:16px;--r-sm:12px;--r-btn:14px;--r-pill:999px;
 }
-#app{width:100%;max-width:480px;margin:0 auto;height:100dvh;height:100vh;display:flex;flex-direction:column;background:var(--cream);position:relative;overflow:hidden}
-#hdr{flex-shrink:0;background:var(--cream);padding:14px 20px 12px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:10}
+#app{width:100%;max-width:480px;margin:0 auto;background:var(--cream);position:relative;min-height:100vh;min-height:100dvh}
+#hdr{position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--cream);padding:calc(env(safe-area-inset-top,0px) + 14px) 20px 12px;display:flex;align-items:center;justify-content:space-between;z-index:50}
 .brand-row{display:flex;align-items:center;gap:10px}
 .wordmark{font-family:'Fraunces',serif;font-weight:600;font-size:24px;color:var(--blue);letter-spacing:-0.025em;line-height:1;display:inline-flex;align-items:baseline}
 .f-wrap{position:relative;display:inline-block;cursor:pointer;user-select:none}
@@ -31,9 +31,9 @@ html,body{height:100%;background:#ece5d3;font-family:'Geist',system-ui,sans-seri
 .poo-egg.on{opacity:1;transform:translateX(-50%) scale(1)}
 #menu-btn{background:none;border:none;cursor:pointer;padding:6px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 #menu-btn span{display:block;width:20px;height:2px;background:currentColor;border-radius:1px}
-#content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px}
-#tabbar{flex-shrink:0;display:grid;grid-template-columns:repeat(3,1fr);background:var(--cream);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0)}
-.tab-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0 10px;background:none;border:none;cursor:pointer;font-family:'Geist',sans-serif;font-size:10.5px;font-weight:500;color:var(--muted-2);transition:color .15s}
+#content{overflow-y:auto;-webkit-overflow-scrolling:touch;padding-top:calc(env(safe-area-inset-top,0px) + 64px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px)}
+#tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:grid;grid-template-columns:repeat(3,1fr);background:var(--cream);border-top:1px solid var(--line);padding-bottom:max(env(safe-area-inset-bottom,16px),16px);z-index:50}
+.tab-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 0 6px;background:none;border:none;cursor:pointer;font-family:'Geist',sans-serif;font-size:10.5px;font-weight:500;color:var(--muted-2);transition:color .15s}
 .tab-btn.active{color:var(--blue)}
 .tab-btn svg{width:22px;height:22px}
 .lbl{font-family:'Geist Mono',monospace;font-size:10.5px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
