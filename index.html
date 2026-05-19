@@ -22,8 +22,8 @@ html,body{height:100%;background:#ece5d3;font-family:'Geist',system-ui,sans-seri
   --line:#e6dfca;--line-soft:#efe9d4;--pos:#2f7d52;--warn:#b8632a;--bh:#7a3a8a;
   --r:16px;--r-sm:12px;--r-btn:14px;--r-pill:999px;
 }
-#app{width:100%;max-width:480px;margin:0 auto;background:var(--cream);position:relative;min-height:100vh;min-height:100dvh}
-#hdr{position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--cream);padding:calc(env(safe-area-inset-top,0px) + 14px) 20px 12px;display:flex;align-items:center;justify-content:space-between;z-index:50}
+#app{width:100%;max-width:480px;margin:0 auto;height:100dvh;height:100vh;display:flex;flex-direction:column;background:var(--cream);overflow:hidden}
+#hdr{flex-shrink:0;background:var(--cream);padding:max(14px,calc(env(safe-area-inset-top,0px) + 14px)) 20px 12px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:10}
 .brand-row{display:flex;align-items:center;gap:10px}
 .wordmark{font-family:'Fraunces',serif;font-weight:600;font-size:24px;color:var(--blue);letter-spacing:-0.025em;line-height:1;display:inline-flex;align-items:baseline}
 .f-wrap{position:relative;display:inline-block;cursor:pointer;user-select:none}
@@ -31,8 +31,8 @@ html,body{height:100%;background:#ece5d3;font-family:'Geist',system-ui,sans-seri
 .poo-egg.on{opacity:1;transform:translateX(-50%) scale(1)}
 #menu-btn{background:none;border:none;cursor:pointer;padding:6px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 #menu-btn span{display:block;width:20px;height:2px;background:currentColor;border-radius:1px}
-#content{overflow-y:auto;-webkit-overflow-scrolling:touch;padding-top:calc(env(safe-area-inset-top,0px) + 64px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px)}
-#tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:grid;grid-template-columns:repeat(3,1fr);background:var(--cream);border-top:1px solid var(--line);padding-bottom:max(env(safe-area-inset-bottom,16px),16px);z-index:50}
+#content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px}
+#tabbar{flex-shrink:0;display:grid;grid-template-columns:repeat(3,1fr);background:var(--cream);border-top:1px solid var(--line);padding-bottom:max(0px,env(safe-area-inset-bottom,0px))}
 .tab-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 0 6px;background:none;border:none;cursor:pointer;font-family:'Geist',sans-serif;font-size:10.5px;font-weight:500;color:var(--muted-2);transition:color .15s}
 .tab-btn.active{color:var(--blue)}
 .tab-btn svg{width:22px;height:22px}
@@ -181,6 +181,12 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 .save-ok.on{opacity:1}
 .page{display:none}
 .page.active{display:block}
+
+.pick-wrap{position:relative;display:flex;align-items:center;background:var(--cream);border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+.pick-txt{flex:1;border:none;background:transparent;padding:11px 13px;font-family:'Geist',sans-serif;font-size:16px;color:var(--ink);outline:none;min-height:46px}
+.pick-txt::placeholder{color:var(--muted-2)}
+.pick-icon{flex-shrink:0;padding:0 13px;cursor:pointer;color:var(--muted);display:flex;align-items:center;height:46px;-webkit-tap-highlight-color:transparent}
+.pick-native{position:absolute;right:0;top:0;width:46px;height:46px;opacity:0;cursor:pointer;font-size:16px}
 </style>
 </head>
 <body>
@@ -222,11 +228,35 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
       <div class="sect-hdr" style="padding-top:16px;padding-bottom:4px"><span class="lbl" style="margin-bottom:0">Quick templates</span></div>
       <div class="hscroll" id="tpl-chips" style="margin-bottom:14px"></div>
       <div class="pad-x" style="display:flex;flex-direction:column;gap:10px">
-        <div class="card"><div class="field"><label class="lbl">Date</label><input type="date" id="l-date" onchange="refreshLog()"></div></div>
+        <div class="card">
+          <div class="field">
+            <label class="lbl">Date</label>
+            <div class="pick-wrap">
+              <input type="text" id="l-date-txt" class="pick-txt" placeholder="DD / MM / YYYY" inputmode="numeric" maxlength="14" oninput="fmtDateInput(this)" onchange="syncDateToHidden();refreshLog()">
+              <input type="hidden" id="l-date">
+              <label for="l-date-native" class="pick-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></label>
+              <input type="date" id="l-date-native" class="pick-native" onchange="onDatePicked('l-date-native','l-date','l-date-txt');refreshLog()">
+            </div>
+          </div>
+        </div>
         <div class="card">
           <div class="row-2">
-            <div class="field"><label class="lbl">Start</label><input type="time" id="l-start" onchange="refreshLog()" oninput="refreshLog()"></div>
-            <div class="field"><label class="lbl">End</label><input type="time" id="l-end" onchange="refreshLog()" oninput="refreshLog()"></div>
+            <div class="field">
+              <label class="lbl">Start</label>
+              <div class="pick-wrap">
+                <input type="text" id="l-start" class="pick-txt" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()">
+                <label for="l-start-native" class="pick-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></label>
+                <input type="time" id="l-start-native" class="pick-native" onchange="onTimePicked('l-start-native','l-start');refreshLog()">
+              </div>
+            </div>
+            <div class="field">
+              <label class="lbl">End</label>
+              <div class="pick-wrap">
+                <input type="text" id="l-end" class="pick-txt" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()">
+                <label for="l-end-native" class="pick-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></label>
+                <input type="time" id="l-end-native" class="pick-native" onchange="onTimePicked('l-end-native','l-end');refreshLog()">
+              </div>
+            </div>
           </div>
           <div id="overnight-note" style="display:none;margin-top:8px;font-size:12px;color:var(--blue)"></div>
         </div>
@@ -236,7 +266,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
             <div class="field"><label class="lbl" style="font-size:9.5px">Duration</label>
               <select id="l-break-dur" onchange="refreshLog()"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">2 hours</option></select>
             </div>
-            <div class="field"><label class="lbl" style="font-size:9.5px">Starts at</label><input type="time" id="l-break-start" onchange="refreshLog()" oninput="refreshLog()"></div>
+            <div class="field"><label class="lbl" style="font-size:9.5px">Starts at</label><div class="pick-wrap"><input type="text" id="l-break-start" class="pick-txt" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()"><label for="l-brkst-native" class="pick-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></label><input type="time" id="l-brkst-native" class="pick-native" onchange="onTimePicked('l-brkst-native','l-break-start');refreshLog()"></div></div>
           </div>
           <div class="tiny" style="margin-top:8px">Break is deducted from the band it falls within.</div>
         </div>
@@ -786,7 +816,7 @@ function buildListHTML(){
 
 function buildEditFormHTML(s){
   var html='<div style="background:var(--cream-card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:4px">';
-  html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line-soft)"><div style="font-size:13px;font-weight:600">Editing shift</div><button onclick="cancelEdit()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px">Cancel</button></div>';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line-soft)"><div style="font-size:13px;font-weight:600">Editing shift</div></div>';
   html+='<div class="edit-form">';
   html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Date</label><input type="date" id="ed-date-'+s.id+'" value="'+s.date+'" onchange="refreshEditBK('+s.id+')"></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Start</label><input type="time" id="ed-start-'+s.id+'" value="'+s.start+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div><div class="field"><label class="lbl">End</label><input type="time" id="ed-end-'+s.id+'" value="'+s.end+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
@@ -899,8 +929,7 @@ function renderBands(){
       html+='<div class="row-2" style="margin-bottom:12px"><div class="field"><label class="lbl">Hourly rate</label><div style="position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--muted)">\u20ac</span><input type="number" value="'+(b.rate||'')+'" placeholder="0.00" step="0.01" min="0" style="padding-left:26px" onchange="updateBandRate(\''+esc(String(b.id))+'\',this.value)" oninput="updateBandRate(\''+esc(String(b.id))+'\',this.value)"></div></div><div class="field"><label class="lbl">Payslip</label><select onchange="updateBandSlip(\''+esc(String(b.id))+'\',this.value)"><option value="0"'+(b.slip===0?' selected':'')+'>Same payslip</option><option value="1"'+(b.slip===1?' selected':'')+'>Next payslip</option><option value="2"'+(b.slip===2?' selected':'')+'>2 payslips later</option></select></div></div>';
       html+='<div class="band-actions"><button class="btn-primary" style="margin-top:0" onclick="saveBand(\''+esc(String(b.id))+'\')">Save</button>';
       if(!isBH&&!isStd){
-        if(confirmDeleteBandId===b.id)html+='<div style="display:flex;align-items:center;gap:8px;flex:1"><span style="flex:1;font-size:12px;font-weight:600;color:var(--warn)">Remove band?</span><button class="btn-ghost" onclick="confirmDeleteBandId=null;renderBands()">No</button><button class="btn-ghost btn-warn" onclick="deleteBandConfirm(\''+esc(String(b.id))+'\')">Yes</button></div>';
-        else html+='<button class="btn-ghost btn-warn" onclick="confirmDeleteBandId=\''+esc(String(b.id))+'\';renderBands()">Delete</button>';
+        html+='<button class="btn-ghost btn-warn" onclick="deleteBandNow(\''+esc(String(b.id))+'\')">Delete band</button>';
       }
       html+='</div></div>';
     }
@@ -917,7 +946,7 @@ function updateBandSlip(id,v){var b=getBand(id);if(b)b.slip=parseInt(v)||0;}
 function toggleDay(id,d){var b=getBand(id);if(!b)return;var i=b.days.indexOf(d);i===-1?b.days.push(d):b.days.splice(i,1);renderBands();}
 function addBand(){var color=PALETTE[bands.length%PALETTE.length],newId='band_'+Date.now();bands.push({id:newId,name:'New Band',color:color,rate:0,days:[],start:'09:00',end:'17:00',slip:0,kind:'premium'});openBandId=newId;persist();renderBands();}
 function saveBand(id){persist();openBandId=null;renderBands();var ok=document.getElementById('save-ok');if(ok){ok.classList.add('on');setTimeout(function(){ok.classList.remove('on');},2200);}toast('Band saved');}
-function deleteBandConfirm(id){bands=bands.filter(function(b){return String(b.id)!==String(id);});if(String(openBandId)===String(id))openBandId=null;confirmDeleteBandId=null;persist();renderBands();}
+function deleteBandNow(id){bands=bands.filter(function(b){return String(b.id)!==String(id);});if(String(openBandId)===String(id))openBandId=null;confirmDeleteBandId=null;persist();renderBands();toast('Band removed');}
 
 var editingTplId=null;
 function renderTemplates(){
@@ -957,6 +986,12 @@ function deleteTpl(id){shiftTemplates=shiftTemplates.filter(function(t){return t
 
 function openMenu(){document.getElementById('menu-scrim').className='scrim open';document.getElementById('menu-sheet').className='sheet open';}
 function closeMenu(){document.getElementById('menu-scrim').className='scrim';document.getElementById('menu-sheet').className='sheet';}
+(function(){
+  var sheet=document.getElementById('menu-sheet');
+  var startY=0;
+  sheet.addEventListener('touchstart',function(e){startY=e.touches[0].clientY;},{passive:true});
+  sheet.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-startY>60)closeMenu();},{passive:true});
+})();
 function showInstallModal(){document.getElementById('install-scrim').className='scrim open';document.getElementById('install-sheet').className='sheet open';}
 function closeInstallModal(){document.getElementById('install-scrim').className='scrim';document.getElementById('install-sheet').className='sheet';}
 
@@ -1014,9 +1049,50 @@ function injectPWA(){
   showPwaBanner();
 }
 
+
+function fmtTimeInput(el){
+  var raw=el.value.replace(/\D/g,'').slice(0,4);
+  if(raw.length>=3)el.value=raw.slice(0,2)+':'+raw.slice(2);
+  else el.value=raw;
+}
+function fmtDateInput(el){
+  var raw=el.value.replace(/\D/g,'').slice(0,8);
+  if(raw.length>=5)el.value=raw.slice(0,2)+' / '+raw.slice(2,4)+' / '+raw.slice(4);
+  else if(raw.length>=3)el.value=raw.slice(0,2)+' / '+raw.slice(2);
+  else el.value=raw;
+  syncDateToHidden();
+}
+function syncDateToHidden(){
+  var txt=document.getElementById('l-date-txt');
+  var hid=document.getElementById('l-date');
+  if(!txt||!hid)return;
+  var raw=txt.value.replace(/\D/g,'');
+  if(raw.length===8){hid.value=raw.slice(4)+'-'+raw.slice(2,4)+'-'+raw.slice(0,2);}
+  else{hid.value='';}
+}
+function onDatePicked(nativeId,hidId,txtId){
+  var nat=document.getElementById(nativeId);
+  var hid=document.getElementById(hidId);
+  var txt=document.getElementById(txtId);
+  if(!nat.value)return;
+  hid.value=nat.value;
+  var p=nat.value.split('-');
+  if(txt)txt.value=p[2]+' / '+p[1]+' / '+p[0];
+}
+function onTimePicked(nativeId,txtId){
+  var nat=document.getElementById(nativeId);
+  var txt=document.getElementById(txtId);
+  if(nat&&txt&&nat.value)txt.value=nat.value;
+}
+function setLogDate(isoDate){
+  var hid=document.getElementById('l-date');
+  var txt=document.getElementById('l-date-txt');
+  if(hid)hid.value=isoDate;
+  if(txt&&isoDate){var p=isoDate.split('-');txt.value=p[2]+' / '+p[1]+' / '+p[0];}
+}
 loadData();
 var pooEl=document.getElementById('poo-egg');if(pooEl&&pooOn)pooEl.className='poo-egg on';
-var dEl=document.getElementById('l-date');if(dEl)dEl.value=new Date().toISOString().split('T')[0];
+setLogDate(new Date().toISOString().split('T')[0]);
 var psEl=document.getElementById('period-select');if(psEl)psEl.value=settings.periodType;
 var pdEl=document.getElementById('payslip-date-input');if(pdEl)pdEl.value=settings.nextPayslipDate||'';
 injectPWA();
