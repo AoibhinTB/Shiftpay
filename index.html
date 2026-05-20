@@ -31,11 +31,11 @@ html,body{height:100%;background:#ece5d3;font-family:'Geist',system-ui,sans-seri
 .poo-egg.on{opacity:1;transform:translateX(-50%) scale(1)}
 #menu-btn{background:none;border:none;cursor:pointer;padding:6px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 #menu-btn span{display:block;width:20px;height:2px;background:currentColor;border-radius:1px}
-#content{padding-top:calc(env(safe-area-inset-top,0px) + 62px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 72px);min-height:100dvh;min-height:100vh}
+#content{padding-top:calc(env(safe-area-inset-top,0px) + 62px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 90px);min-height:100dvh;min-height:100vh}
 #tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:grid;grid-template-columns:repeat(3,1fr);background:var(--cream);border-top:1px solid var(--line);padding-bottom:max(0px,env(safe-area-inset-bottom,0px));z-index:50}
 .tab-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 0 6px;background:none;border:none;cursor:pointer;font-family:'Geist',sans-serif;font-size:10.5px;font-weight:500;color:var(--muted-2);transition:color .15s}
 .tab-btn.active{color:var(--blue)}
-.tab-btn svg{width:22px;height:22px}
+.tab-btn svg{width:22px;height:22px;overflow:visible}
 .lbl{font-family:'Geist Mono',monospace;font-size:10.5px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
 .tiny{font-size:12px;color:var(--muted);line-height:1.5}
 .mono{font-family:'Geist Mono',monospace}
@@ -325,7 +325,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
       Log shift
     </button>
     <button class="tab-btn" id="tb-summary" onclick="go('summary',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 18 4 14 8 14"/><polyline points="4 14 11 7 14 10 20 4"/><line x1="20" y1="4" x2="20" y2="9"/><line x1="20" y1="4" x2="15" y2="4"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>
       Summary
     </button>
     <button class="tab-btn" id="tb-setup" onclick="go('setup',this)">
@@ -375,6 +375,15 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 </div>
 
 <input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImport(event)">
+<div class="scrim" id="day-scrim" onclick="closeDayModal()"></div>
+<div class="sheet" id="day-sheet">
+  <div class="sheet-grab"></div>
+  <div style="padding:16px 24px 24px">
+    <div id="day-sheet-title" style="font-size:17px;font-weight:700;margin-bottom:14px"></div>
+    <div id="day-sheet-body"></div>
+    <button class="btn-secondary" style="margin-top:16px" onclick="closeDayModal()">Close</button>
+  </div>
+</div>
 <div id="toast"></div>
 <script>
 'use strict';
@@ -881,7 +890,8 @@ function buildCalendarHTML(){
   for(var i=0;i<firstDow;i++)html+='<div style="aspect-ratio:1/1"></div>';
   for(var d=1;d<=daysInMonth;d++){
     var dayShifts=byDate[d]||[],isToday=d===today.getDate()&&calMonthOffset===0;
-    html+='<div class="cal-cell'+(isToday?' today':dayShifts.length?' has-shift':'')+'"><span class="cn">'+d+'</span>';
+    var cellDate=dateStr(new Date(year,month,d));
+    html+='<div class="cal-cell'+(isToday?' today':dayShifts.length?' has-shift':'')+'"' +(dayShifts.length?(' data-d="'+cellDate+'" onclick="openDay(this)"'):'')+ '><span class="cn">'+d+'</span>';
     if(dayShifts.length){
       html+='<div class="cal-dots">';
       var shown=0;
@@ -1090,6 +1100,30 @@ function setLogDate(isoDate){
   if(hid)hid.value=isoDate;
   if(txt&&isoDate){var p=isoDate.split('-');txt.value=p[2]+' / '+p[1]+' / '+p[0];}
 }
+
+function openDay(el){var ds=el.getAttribute('data-d');if(ds)openDayModal(ds);}
+function closeDayModal(){document.getElementById('day-scrim').className='scrim';document.getElementById('day-sheet').className='sheet';}
+function openDayModal(ds){
+  var dayShifts=shifts.filter(function(s){return s.date===ds;});
+  if(!dayShifts.length)return;
+  var d=new Date(ds+'T12:00');
+  var title=d.toLocaleDateString('en-IE',{weekday:'long',day:'numeric',month:'long'});
+  document.getElementById('day-sheet-title').textContent=title;
+  var html='';
+  dayShifts.forEach(function(s){
+    var split=s.split||[];
+    html+='<div style="border:1px solid var(--line);border-radius:var(--r-sm);padding:12px;margin-bottom:10px">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:14px;font-weight:700">'+(s.tplName||s.start+'–'+s.end)+'</div><div style="font-family:Fraunces,serif;font-size:18px;font-weight:600;color:var(--blue)">'+fmtEUR(s.tp||0)+'</div></div>';
+    html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.start+'–'+s.end+' &middot; '+(s.th||0).toFixed(1)+'h'+(s.breakMin?' &middot; '+s.breakMin+'min break':'')+'</div>';
+    if(split.length){html+='<div style="display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line-soft);padding-top:6px">';split.forEach(function(b){html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line-soft)"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' · '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';});html+='</div>';}
+    html+='<div style="display:flex;gap:8px;margin-top:10px"><button onclick="closeDayModal();startEdit('+s.id+')" style="flex:1;background:none;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;font-family:Geist,sans-serif;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer">Edit</button><button onclick="closeDayModal();delShift('+s.id+')" style="flex:1;background:none;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;font-family:Geist,sans-serif;font-size:13px;font-weight:600;color:var(--warn);cursor:pointer">Delete</button></div>';
+    html+='</div>';
+  });
+  document.getElementById('day-sheet-body').innerHTML=html;
+  document.getElementById('day-scrim').className='scrim open';
+  document.getElementById('day-sheet').className='sheet open';
+}
+(function(){var s=document.getElementById('day-sheet'),sy=0;if(!s)return;s.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;},{passive:true});s.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-sy>60)closeDayModal();},{passive:true});})();
 loadData();
 var pooEl=document.getElementById('poo-egg');if(pooEl&&pooOn)pooEl.className='poo-egg on';
 setLogDate(new Date().toISOString().split('T')[0]);
