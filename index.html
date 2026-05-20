@@ -646,9 +646,10 @@ function showSuccess(amt,payslipStr){
   document.getElementById('success-payslip').textContent='Lands on payslip dated '+payslipStr;
   document.getElementById('success-scrim').className='scrim open';
   document.getElementById('success-sheet').className='sheet open';
+  document.getElementById('content').style.overflow='hidden';
 }
-function closeSuccess(){document.getElementById('success-scrim').className='scrim';document.getElementById('success-sheet').className='sheet';go('summary',document.getElementById('tb-summary'));}
-function logAnother(){document.getElementById('success-scrim').className='scrim';document.getElementById('success-sheet').className='sheet';}
+function closeSuccess(){document.getElementById('success-scrim').className='scrim';document.getElementById('success-sheet').className='sheet';document.getElementById('content').style.overflow='';go('summary',document.getElementById('tb-summary'));}
+function logAnother(){document.getElementById('success-scrim').className='scrim';document.getElementById('success-sheet').className='sheet';document.getElementById('content').style.overflow='';}
 
 function getMondayOfWeek(d){var day=d.getDay(),diff=day===0?-6:1-day;return new Date(d.getFullYear(),d.getMonth(),d.getDate()+diff);}
 function getPeriodKey(ds){
@@ -994,8 +995,8 @@ function saveTpl(id){
 }
 function deleteTpl(id){shiftTemplates=shiftTemplates.filter(function(t){return String(t.id)!==String(id);});editingTplId=null;persist();renderTemplates();renderTplChips();toast('Template removed');}
 
-function openMenu(){document.getElementById('menu-scrim').className='scrim open';document.getElementById('menu-sheet').className='sheet open';}
-function closeMenu(){document.getElementById('menu-scrim').className='scrim';document.getElementById('menu-sheet').className='sheet';}
+function openMenu(){document.getElementById('menu-scrim').className='scrim open';document.getElementById('menu-sheet').className='sheet open';document.getElementById('content').style.overflow='hidden';}
+function closeMenu(){document.getElementById('menu-scrim').className='scrim';document.getElementById('menu-sheet').className='sheet';document.getElementById('content').style.overflow='';}
 function initSheetSwipe(sheetId,closeFn){
   var el=document.getElementById(sheetId);
   if(!el)return;
@@ -1004,8 +1005,8 @@ function initSheetSwipe(sheetId,closeFn){
   el.addEventListener('touchmove',function(e){
     if(!dragging)return;
     var dy=e.touches[0].clientY-sy;
-    if(dy>0)el.style.transform='translateX(-50%) translateY('+dy+'px)';
-  },{passive:true});
+    if(dy>0){e.preventDefault();el.style.transform='translateX(-50%) translateY('+dy+'px)';}
+  },{passive:false});
   el.addEventListener('touchend',function(e){
     dragging=false;
     var dy=e.changedTouches[0].clientY-sy;
