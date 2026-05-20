@@ -434,8 +434,8 @@ function loadDefaultTemplates(){
   ];
 }
 function ensureDefaultBands(){
-  var hasBH=bands.some(function(b){return b.kind==='bh';});
-  var hasStd=bands.some(function(b){return b.kind==='standard';});
+  var hasBH=bands.some(function(b){return b.kind==='bh'||b.locked==='bh';});
+  var hasStd=bands.some(function(b){return b.kind==='standard'||b.locked==='base';});
   if(!hasBH)bands.unshift({id:'bh',name:'Bank Holiday',color:'#7a3a8a',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh'});
   if(!hasStd)bands.splice(1,0,{id:'base',name:'Standard',color:'#1f4d8a',rate:0,days:[0,1,2,3,4],start:'08:00',end:'20:00',slip:0,kind:'standard'});
 }
@@ -915,13 +915,13 @@ function renderBands(){
   var sorted=bands.slice().sort(function(a,b){return(b.rate||0)-(a.rate||0);});
   var html='';
   for(var i=0;i<sorted.length;i++){
-    var b=sorted[i],isBH=b.kind==='bh',isStd=b.kind==='standard',open=String(openBandId)===String(b.id);
+    var b=sorted[i],isBH=b.kind==='bh'||b.locked==='bh',isStd=b.kind==='standard'||b.locked==='base',open=String(openBandId)===String(b.id);var bDays=b.days||[];var bSlip=b.slip!==undefined?b.slip:(b.arrears||0);
     var rateStr=b.rate>0?('\u20ac'+b.rate.toFixed(2)+'/h'):'Rate not set',rateClr=b.rate>0?b.color:'var(--muted-2)';
     html+='<div class="band-card" id="bc-'+esc(String(b.id))+'" style="border-left:3px solid '+b.color+'">';
     html+='<div class="band-head" onclick="toggleBand(\''+esc(String(b.id))+'\')">';
     html+='<div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span>';
     html+='<div><div style="font-size:14.5px;font-weight:700">'+esc(b.name)+'</div>';
-    if(!isBH)html+='<div class="mono" style="font-size:10px;color:var(--muted-2);margin-top:1px">'+b.days.map(function(d){return DOW_IE[d];}).join(' ')+'</div>';
+    if(!isBH)html+='<div class="mono" style="font-size:10px;color:var(--muted-2);margin-top:1px">'+bDays.map(function(d){return DOW_IE[d];}).join(' ')+'</div>';
     else html+='<div class="mono" style="font-size:10px;color:var(--muted-2);margin-top:1px">Flagged shifts only</div>';
     html+='</div></div>';
     html+='<div style="display:flex;align-items:center;gap:8px"><div style="font-size:13px;font-weight:600;color:'+rateClr+'">'+rateStr+'</div><div class="chev'+(open?' open':'')+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div></div>';
@@ -933,7 +933,7 @@ function renderBands(){
       if(!isBH&&!isStd)html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Name</label><input type="text" value="'+esc(b.name)+'" oninput="updateBandName(\''+esc(String(b.id))+'\',this.value)"></div>';
       if(!isBH){
         html+='<div class="lbl" style="margin-bottom:6px">Applies on</div><div class="day-row" style="margin-bottom:12px">';
-        for(var dd=0;dd<7;dd++){var on2=b.days.indexOf(dd)!==-1;html+='<button class="day-pill'+(on2?' on':'')+'" style="'+(on2?'background:'+b.color+'18;border-color:'+b.color+';color:'+b.color:'')+'\" onclick="toggleDay(\''+esc(String(b.id))+'\','+dd+')">'+DOW_IE[dd]+'</button>';}
+        for(var dd=0;dd<7;dd++){var on2=bDays.indexOf(dd)!==-1;html+='<button class="day-pill'+(on2?' on':'')+'" style="'+(on2?'background:'+b.color+'18;border-color:'+b.color+';color:'+b.color:'')+'\" onclick="toggleDay(\''+esc(String(b.id))+'\','+dd+')">'+DOW_IE[dd]+'</button>';}
         html+='</div><div class="row-2" style="margin-bottom:12px"><div class="field"><label class="lbl">From</label><input type="time" value="'+b.start+'" onchange="updateBandField(\''+esc(String(b.id))+'\',\'start\',this.value)" oninput="updateBandField(\''+esc(String(b.id))+'\',\'start\',this.value)"></div><div class="field"><label class="lbl">Until</label><input type="time" value="'+(b.end==='24:00'?'00:00':b.end)+'" onchange="updateBandField(\''+esc(String(b.id))+'\',\'end\',this.value)" oninput="updateBandField(\''+esc(String(b.id))+'\',\'end\',this.value)"></div></div>';
       }
       html+='<div class="row-2" style="margin-bottom:12px"><div class="field"><label class="lbl">Hourly rate</label><div style="position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--muted)">\u20ac</span><input type="number" value="'+(b.rate||'')+'" placeholder="0.00" step="0.01" min="0" style="padding-left:26px" onchange="updateBandRate(\''+esc(String(b.id))+'\',this.value)" oninput="updateBandRate(\''+esc(String(b.id))+'\',this.value)"></div></div><div class="field"><label class="lbl">Payslip</label><select onchange="updateBandSlip(\''+esc(String(b.id))+'\',this.value)"><option value="0"'+(b.slip===0?' selected':'')+'>Same payslip</option><option value="1"'+(b.slip===1?' selected':'')+'>Next payslip</option><option value="2"'+(b.slip===2?' selected':'')+'>2 payslips later</option></select></div></div>';
@@ -952,8 +952,8 @@ function setBandColor(id,color){var b=getBand(id);if(b){b.color=color;renderBand
 function updateBandName(id,v){var b=getBand(id);if(b)b.name=v;}
 function updateBandField(id,f,v){var b=getBand(id);if(b)b[f]=v;}
 function updateBandRate(id,v){var b=getBand(id);if(b)b.rate=parseFloat(v)||0;}
-function updateBandSlip(id,v){var b=getBand(id);if(b)b.slip=parseInt(v)||0;}
-function toggleDay(id,d){var b=getBand(id);if(!b)return;var i=b.days.indexOf(d);i===-1?b.days.push(d):b.days.splice(i,1);renderBands();}
+function updateBandSlip(id,v){var b=getBand(id);if(b){b.slip=parseInt(v)||0;b.arrears=b.slip;}}
+function toggleDay(id,d){var b=getBand(id);if(!b)return;if(!b.days)b.days=[];var i=b.days.indexOf(d);i===-1?b.days.push(d):b.days.splice(i,1);renderBands();}
 function addBand(){var color=PALETTE[bands.length%PALETTE.length],newId='band_'+Date.now();bands.push({id:newId,name:'New Band',color:color,rate:0,days:[],start:'09:00',end:'17:00',slip:0,kind:'premium'});openBandId=newId;persist();renderBands();}
 function saveBand(id){persist();openBandId=null;renderBands();var ok=document.getElementById('save-ok');if(ok){ok.classList.add('on');setTimeout(function(){ok.classList.remove('on');},2200);}toast('Band saved');}
 function deleteBandNow(id){bands=bands.filter(function(b){return String(b.id)!==String(id);});if(String(openBandId)===String(id))openBandId=null;confirmDeleteBandId=null;persist();renderBands();toast('Band removed');}
