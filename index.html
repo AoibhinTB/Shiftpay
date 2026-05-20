@@ -463,11 +463,11 @@ function splitShift(date,start,end,bh,breakMin,breakStart){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
     if(breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];}))continue;
     var pick=null;
-    if(bh)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'){pick=bands[i];break;}
+    if(bh)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
     if(!pick){
       var matches=[];
       for(var i=0;i<bands.length;i++){
-        var b=bands[i];if(b.kind==='bh')continue;if(b.days.indexOf(dow)===-1)continue;
+        var b=bands[i];if(b.kind==='bh'||b.locked==='bh')continue;if((b.days||[]).indexOf(dow)===-1)continue;
         var bs2=parseTime(b.start),be2=parseTime(b.end);if(bs2===null||be2===null)continue;
         var inW;
         if(b.end==='24:00')inW=tod>=bs2;
@@ -504,11 +504,11 @@ function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme){
     if(inBreak){color='break';label='Break';}
     else{
       var pick=null;
-      if(bh)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'){pick=bands[i];break;}
+      if(bh)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
       if(!pick){
         var matches=[];
         for(var i=0;i<bands.length;i++){
-          var b=bands[i];if(b.kind==='bh')continue;if(b.days.indexOf(dow)===-1)continue;
+          var b=bands[i];if(b.kind==='bh'||b.locked==='bh')continue;if((b.days||[]).indexOf(dow)===-1)continue;
           var bs2=parseTime(b.start),be2=parseTime(b.end);if(bs2===null||be2===null)continue;
           var inW;if(b.end==='24:00')inW=tod>=bs2;else if(be2>bs2)inW=tod>=bs2&&tod<be2;else inW=tod>=bs2||tod<be2;
           if(inW)matches.push(b);
