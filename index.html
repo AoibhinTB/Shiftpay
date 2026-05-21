@@ -1229,6 +1229,12 @@ function openDayModal(ds){
 }
 (function(){var s=document.getElementById('day-sheet'),sy=0;if(!s)return;s.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;},{passive:true});s.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-sy>60)closeDayModal();},{passive:true});})();
 loadData();
+// Retroactively build dateSplit for overnight shifts that predate this feature
+shifts.forEach(function(s){
+  if(!s.dateSplit&&s.start&&s.end&&isOvernight(s.start,s.end)){
+    s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bh||false,s.breakMin||0,s.breakStart||'');
+  }
+});
 var pooEl=document.getElementById('poo-egg');if(pooEl&&pooOn)pooEl.className='poo-egg on';
 setLogDate(new Date().toISOString().split('T')[0]);
 var psEl=document.getElementById('period-select');if(psEl)psEl.value=settings.periodType;
