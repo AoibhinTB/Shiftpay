@@ -304,9 +304,9 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
             </select>
           </div>
           <div class="field">
-            <label class="lbl">Next payslip date</label>
+            <label class="lbl">Last day of pay period</label>
             <input type="date" id="payslip-date-input" onchange="settings.nextPayslipDate=this.value;persist();renderSummary()">
-            <span class="tiny">Set once &mdash; future dates are calculated automatically.</span>
+            <span class="tiny">Enter the last day of your current pay period. Future end dates are calculated automatically.</span>
           </div>
         </div>
         <div class="save-ok" id="save-ok">Saved</div>
@@ -388,7 +388,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 <script>
 'use strict';
 var DOW_IE=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-var PALETTE=['#1f4d8a','#3d3a73','#22524d','#7a3a2e','#7a3a8a','#2563eb','#0891b2','#d97706'];
+var PALETTE=['#2563eb','#7c3aed','#0d9488','#dc2626','#d97706','#0891b2','#059669','#f59e0b'];
 var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
 var settings={periodType:'weekly',nextPayslipDate:''};
 var pooOn=false,onboarded=false;
@@ -418,11 +418,11 @@ function loadData(){
 }
 function loadDefaultBands(){
   bands=[
-    {id:'bh',name:'Bank Holiday',color:'#7a3a8a',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh'},
-    {id:'base',name:'Standard',color:'#1f4d8a',rate:0,days:[0,1,2,3,4],start:'08:00',end:'20:00',slip:0,kind:'standard'},
-    {id:'night',name:'Night',color:'#3d3a73',rate:0,days:[0,1,2,3,4,5,6],start:'20:00',end:'08:00',slip:1,kind:'premium'},
-    {id:'sat',name:'Saturday',color:'#22524d',rate:0,days:[5],start:'08:00',end:'20:00',slip:1,kind:'premium'},
-    {id:'sun',name:'Sunday',color:'#7a3a2e',rate:0,days:[6],start:'00:00',end:'24:00',slip:1,kind:'premium'}
+    {id:'bh',name:'Bank Holiday',color:'#d97706',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh'},
+    {id:'base',name:'Standard',color:'#2563eb',rate:0,days:[0,1,2,3,4],start:'08:00',end:'20:00',slip:0,kind:'standard'},
+    {id:'night',name:'Night',color:'#7c3aed',rate:0,days:[0,1,2,3,4,5,6],start:'20:00',end:'08:00',slip:1,kind:'premium'},
+    {id:'sat',name:'Saturday',color:'#0d9488',rate:0,days:[5],start:'08:00',end:'20:00',slip:1,kind:'premium'},
+    {id:'sun',name:'Sunday',color:'#dc2626',rate:0,days:[6],start:'00:00',end:'24:00',slip:1,kind:'premium'}
   ];
 }
 function loadDefaultTemplates(){
@@ -434,10 +434,32 @@ function loadDefaultTemplates(){
   ];
 }
 function ensureDefaultBands(){
-  var hasBH=bands.some(function(b){return b.kind==='bh'||b.locked==='bh';});
-  var hasStd=bands.some(function(b){return b.kind==='standard'||b.locked==='base';});
-  if(!hasBH)bands.unshift({id:'bh',name:'Bank Holiday',color:'#7a3a8a',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh'});
-  if(!hasStd)bands.splice(1,0,{id:'base',name:'Standard',color:'#1f4d8a',rate:0,days:[0,1,2,3,4],start:'08:00',end:'20:00',slip:0,kind:'standard'});
+  // Migrate old-format bands: convert JS day convention (0=Sun) to Irish (0=Mon)
+  bands.forEach(function(b){
+    if(!b.kind&&!b._migrated&&b.days&&b.days.length){
+      b.days=b.days.map(function(d){return(d+6)%7;});
+      b._migrated=true;
+    }
+    // Map locked to kind
+    if(!b.kind&&b.locked==='bh')b.kind='bh';
+    if(!b.kind&&b.locked==='base')b.kind='standard';
+    // Map arrears to slip
+    if(b.slip===undefined&&b.arrears!==undefined)b.slip=b.arrears;
+  });
+  // Deduplicate BH and Standard bands (keep one with highest rate)
+  var bhBands=bands.filter(function(b){return b.kind==='bh';});
+  var stdBands=bands.filter(function(b){return b.kind==='standard';});
+  var otherBands=bands.filter(function(b){return b.kind!=='bh'&&b.kind!=='standard';});
+  function best(arr){if(!arr.length)return null;return arr.slice().sort(function(a,b){return(b.rate||0)-(a.rate||0);})[0];}
+  var bestBH=best(bhBands)||{id:'bh',name:'Bank Holiday',color:'#d97706',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh'};
+  // Only BH is mandatory - Standard is optional
+  if(stdBands.length>1){
+    // Deduplicate Standards if there are duplicates, keep best
+    var bestStd=best(stdBands);
+    bands=[bestBH,bestStd].concat(otherBands);
+  } else {
+    bands=[bestBH].concat(stdBands).concat(otherBands);
+  }
 }
 function getBand(id){for(var i=0;i<bands.length;i++)if(String(bands[i].id)===String(id))return bands[i];return null;}
 function parseTime(s){if(!s||s.length<4)return null;var p=s.split(':'),h=parseInt(p[0],10),m=parseInt(p[1],10);return(isNaN(h)||isNaN(m))?null:h*60+m;}
@@ -487,6 +509,53 @@ function splitShift(date,start,end,bh,breakMin,breakStart){
   result.sort(function(a,b){return b.amount-a.amount;});
   return result;
 }
+// Split shift returning per-date buckets for overnight attribution
+function splitShiftByDate(date,start,end,bh,breakMin,breakStart){
+  var SLOT=15,s=parseTime(start),e=parseTime(end);
+  if(s===null||e===null)return{};
+  var totalMin=e>s?e-s:(1440-s)+e;
+  if(totalMin<=0)return{};
+  var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
+  var bs=parseTime(breakStart),breakRanges=[];
+  if(bs!==null&&breakMin>0)breakRanges.push([bs,bs+breakMin]);
+  var byDate={};
+  for(var m=0;m<totalMin;m+=SLOT){
+    var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
+    if(breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];}))continue;
+    var slotDate=new Date(baseDate);slotDate.setDate(slotDate.getDate()+dayOffset);
+    var slotDateStr=dateStr(slotDate);
+    if(!byDate[slotDateStr])byDate[slotDateStr]={};
+    var pick=null;
+    if(bh)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
+    if(!pick){
+      var matches=[];
+      for(var i=0;i<bands.length;i++){
+        var b=bands[i];if(b.kind==='bh'||b.locked==='bh')continue;if((b.days||[]).indexOf(dow)===-1)continue;
+        var bs2=parseTime(b.start),be2=parseTime(b.end);if(bs2===null||be2===null)continue;
+        var inW;if(b.end==='24:00')inW=tod>=bs2;else if(be2>bs2)inW=tod>=bs2&&tod<be2;else inW=tod>=bs2||tod<be2;
+        if(inW)matches.push(b);
+      }
+      matches.sort(function(a,bb){return(bb.rate||0)-(a.rate||0);});
+      pick=matches[0]||null;
+      if(!pick)for(var i=0;i<bands.length;i++)if(bands[i].kind==='standard'){pick=bands[i];break;}
+    }
+    if(!pick)continue;
+    if(!byDate[slotDateStr][pick.id])byDate[slotDateStr][pick.id]=0;
+    byDate[slotDateStr][pick.id]+=SLOT;
+  }
+  // Convert to result format
+  var result={};
+  for(var d in byDate){
+    result[d]=[];
+    for(var bid in byDate[d]){
+      var bb=getBand(bid),h2=byDate[d][bid]/60;
+      result[d].push({id:bid,name:bb?bb.name:'Unknown',color:bb?bb.color:'#999',hours:h2,amount:h2*(bb?bb.rate||0:0),rate:bb?bb.rate||0:0,slip:bb?bb.slip||0:0});
+    }
+    result[d].sort(function(a,b){return b.amount-a.amount;});
+  }
+  return result;
+}
+
 function shiftTotalHours(date,start,end,breakMin){var s=parseTime(start),e=parseTime(end);if(s===null||e===null)return 0;var totalMin=e>s?e-s:(1440-s)+e;return(totalMin-breakMin)/60;}
 
 function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme){
@@ -693,12 +762,29 @@ function renderSummary(){
   var nextPay=0;
   shifts.forEach(function(s){
     var sk=getPeriodKey(s.date);
+    if(s.dateSplit){
+      // New format: attribute per actual date (overnight splits correctly)
+      for(var ds in s.dateSplit){
+        var dk=getPeriodKey(ds);
+        s.dateSplit[ds].forEach(function(b){
+          var slip=b.slip!==undefined?b.slip:0;
+          if(slip===0&&dk===currentKey)nextPay+=b.amount;
+          else if(slip===1&&dk===prev1Key)nextPay+=b.amount;
+          else if(slip===2&&dk===prev2Key)nextPay+=b.amount;
+        });
+      }
+      return;
+    }
     var split=s.split||[];
-    if(!split.length&&s.hm){for(var bid in s.hm){var bnd=getBand(bid);if(bnd)split.push({id:bid,hours:s.hm[bid]||0,amount:s.pm[bid]||0,slip:bnd.slip||0});}}
+    if(!split.length){
+      if(sk===currentKey)nextPay+=s.tp||0;
+      return;
+    }
     split.forEach(function(b){
-      if(b.slip===0&&sk===currentKey)nextPay+=b.amount;
-      else if(b.slip===1&&sk===prev1Key)nextPay+=b.amount;
-      else if(b.slip===2&&sk===prev2Key)nextPay+=b.amount;
+      var slip=b.slip!==undefined?b.slip:0;
+      if(slip===0&&sk===currentKey)nextPay+=b.amount;
+      else if(slip===1&&sk===prev1Key)nextPay+=b.amount;
+      else if(slip===2&&sk===prev2Key)nextPay+=b.amount;
     });
   });
   var payslipD=getNextPayslipDate(),payslipStr=fmtPayslipDate(payslipD);
@@ -931,7 +1017,7 @@ function renderBands(){
       html+='<div class="band-body"><div class="lbl" style="margin-bottom:6px">Colour</div><div class="swatch-row" style="margin-bottom:14px">';
       for(var p=0;p<PALETTE.length;p++){var on=b.color===PALETTE[p];html+='<div class="swatch'+(on?' on':'')+'" style="background:'+PALETTE[p]+'" onclick="setBandColor(\''+esc(String(b.id))+'\',\''+PALETTE[p]+'\')"></div>';}
       html+='</div>';
-      if(!isBH&&!isStd)html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Name</label><input type="text" value="'+esc(b.name)+'" oninput="updateBandName(\''+esc(String(b.id))+'\',this.value)"></div>';
+      if(!isBH)html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Name</label><input type="text" value="'+esc(b.name)+'" oninput="updateBandName(\''+esc(String(b.id))+'\',this.value)"></div>';
       if(!isBH){
         html+='<div class="lbl" style="margin-bottom:6px">Applies on</div><div class="day-row" style="margin-bottom:12px">';
         for(var dd=0;dd<7;dd++){var on2=bDays.indexOf(dd)!==-1;html+='<button class="day-pill'+(on2?' on':'')+'" style="'+(on2?'background:'+b.color+'18;border-color:'+b.color+';color:'+b.color:'')+'\" onclick="toggleDay(\''+esc(String(b.id))+'\','+dd+')">'+DOW_IE[dd]+'</button>';}
