@@ -851,8 +851,12 @@ function togglePeriod(key){openPeriodKeys[key]=!openPeriodKeys[key];renderSummar
 
 function buildListHTML(){
   var periodMap={};
-  shifts.forEach(function(s){var k=getPeriodKey(s.date);if(!periodMap[k])periodMap[k]={shifts:[],manuals:[]};periodMap[k].shifts.push(s);});
-  manualEntries.forEach(function(m){var k=getPeriodKey(m.date);if(!periodMap[k])periodMap[k]={shifts:[],manuals:[]};periodMap[k].manuals.push(m);});
+  shifts.forEach(function(s){
+    if(s.dateSplit&&Object.keys(s.dateSplit).length){
+      for(var ds in s.dateSplit){var pk=getPeriodKey(ds);if(!periodMap[pk])periodMap[pk]={};}
+    } else {var k=getPeriodKey(s.date);if(!periodMap[k])periodMap[k]={};}
+  });
+  manualEntries.forEach(function(m){var k=getPeriodKey(m.date);if(!periodMap[k])periodMap[k]={};});
   var periodKeys=Object.keys(periodMap).map(Number).sort(function(a,b){return b-a;});
   if(!periodKeys.length)return'';
   var currentKey=currentPeriodKeyOffset(0);
@@ -868,59 +872,83 @@ function buildListHTML(){
     monthKeys.forEach(function(mk){
       var mPeriods=years[yr][mk];
       var isCurrentMonth=mPeriods.indexOf(currentKey)!==-1;
-      if(multiMonth)html+='<div style="font-size:15px;font-weight:700;color:'+(isCurrentMonth?'var(--blue)':'var(--ink-2)')+';margin:10px 0 6px">'+monthKeyName(mk)+'</div>';
+      if(multiMonth){
+        var mc=isCurrentMonth?'var(--blue)':'var(--ink-2)';
+        html+='<div style="font-size:15px;font-weight:700;color:'+mc+';margin:10px 0 6px">'+monthKeyName(mk)+'</div>';
+      }
       mPeriods.forEach(function(k){
-        var isCurrent=k===currentKey,data=periodMap[k],open=!!openPeriodKeys[k];
-        var periodPay=0,periodHrs=0;
-        data.shifts.forEach(function(s){
-          periodHrs+=s.th||0;
-          periodPay+=getShiftPayForPeriod(s,k);
+        var isCurrent=k===currentKey,open=!!openPeriodKeys[k];
+        var dayEntries=[];
+        shifts.forEach(function(s){
+          if(s.dateSplit&&Object.keys(s.dateSplit).length){
+            for(var ds in s.dateSplit){
+              if(getPeriodKey(ds)!==k)continue;
+              var dayBands=s.dateSplit[ds];
+              var dayHrs=dayBands.reduce(function(t,b){return t+b.hours;},0);
+              var dayPay=dayBands.reduce(function(t,b){return t+b.amount;},0);
+              var isFirst=ds===s.date;
+              var dStart=isFirst?s.start:'00:00';
+              var dEnd=(isFirst&&isOvernight(s.start,s.end))?'00:00':s.end;
+              dayEntries.push({type:'shift-day',date:ds,shift:s,bands:dayBands,hours:dayHrs,pay:dayPay,dStart:dStart,dEnd:dEnd,isFirst:isFirst});
+            }
+          } else if(getPeriodKey(s.date)===k){
+            var split=s.split||[];
+            dayEntries.push({type:'shift',date:s.date,shift:s,bands:split,hours:s.th||0,pay:s.tp||0,dStart:s.start,dEnd:s.end,isFirst:true});
+          }
         });
-        data.manuals.forEach(function(m){periodPay+=m.amount||0;});
-        var totalItems=data.shifts.length+data.manuals.length;
-        html+='<div class="period-card'+(isCurrent?' current':'')+'">';
+        manualEntries.forEach(function(m){if(getPeriodKey(m.date)===k)dayEntries.push({type:'manual',date:m.date,item:m});});
+        dayEntries.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+        var periodPay=0,periodHrs=0;
+        dayEntries.forEach(function(e){if(e.type==='manual')periodPay+=e.item.amount||0;else{periodHrs+=e.hours||0;periodPay+=e.pay||0;}});
+        var totalItems=dayEntries.length;
+        var cardCls='period-card'+(isCurrent?' current':'');
+        var chevCls='chev'+(open?' open':'');
+        var entrieslbl=totalItems+' entr'+(totalItems!==1?'ies':'y')+' \u00b7 '+periodHrs.toFixed(1)+'h worked';
+        html+='<div class="'+cardCls+'">';
         html+='<div class="period-head" onclick="togglePeriod('+k+')">';
-        html+='<div><div class="period-name">'+getPeriodLabel(k)+'</div><div class="period-sub">'+totalItems+' entr'+(totalItems!==1?'ies':'y')+' \u00b7 '+periodHrs.toFixed(1)+'h worked</div></div>';
-        html+='<div style="display:flex;align-items:center"><div class="period-amt">'+fmtEUR(periodPay)+'</div><div class="chev'+(open?' open':'')+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div></div>';
+        html+='<div><div class="period-name">'+getPeriodLabel(k)+'</div><div class="period-sub">'+entrieslbl+'</div></div>';
+        html+='<div style="display:flex;align-items:center"><div class="period-amt">'+fmtEUR(periodPay)+'</div>';
+        html+='<div class="'+chevCls+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div></div>';
         html+='</div>';
         if(open){
           html+='<div class="period-body">';
           var bpMap={};
-          data.shifts.forEach(function(s){
-            getShiftBandsForPeriod(s,k).forEach(function(b){
-              if(!bpMap[b.id])bpMap[b.id]={name:b.name,color:b.color,hours:0,amount:0};
-              bpMap[b.id].hours+=b.hours;bpMap[b.id].amount+=b.amount;
-            });
-          });
+          dayEntries.forEach(function(e){if(e.type==='manual')return;(e.bands||[]).forEach(function(b){if(!bpMap[b.id])bpMap[b.id]={name:b.name,color:b.color,hours:0,amount:0};bpMap[b.id].hours+=b.hours;bpMap[b.id].amount+=b.amount;});});
           var bpArr=[];for(var kk in bpMap)bpArr.push(bpMap[kk]);bpArr.sort(function(a,b){return b.amount-a.amount;});
-          if(bpArr.length){html+='<div class="band-pills">';for(var i=0;i<bpArr.length;i++){var b=bpArr[i];html+='<div class="band-pill" style="background:'+b.color+'18;color:'+b.color+'"><div class="bname">'+esc(b.name)+'</div><div class="bhrs">'+b.hours.toFixed(1)+'h</div><div class="bamt">'+fmtEUR(b.amount)+'</div></div>';}html+='</div>';}
-          var allItems=[];
-          data.shifts.forEach(function(s){allItems.push({type:'shift',date:s.date,item:s});});
-          data.manuals.forEach(function(m){allItems.push({type:'manual',date:m.date,item:m});});
-          allItems.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
-          allItems.forEach(function(entry){
-            var s=entry.item,d=new Date(s.date+'T12:00'),dayNum=d.getDate();
-            var dowStr=d.toLocaleDateString('en-IE',{weekday:'short'}).toUpperCase().slice(0,3);
+          if(bpArr.length){
+            html+='<div class="band-pills">';
+            bpArr.forEach(function(b){html+='<div class="band-pill" style="background:'+b.color+'18;color:'+b.color+'"><div class="bname">'+esc(b.name)+'</div><div class="bhrs">'+b.hours.toFixed(1)+'h</div><div class="bamt">'+fmtEUR(b.amount)+'</div></div>';});
+            html+='</div>';
+          }
+          dayEntries.forEach(function(entry){
             if(entry.type==='manual'){
-              html+='<div class="shift-row"><div class="shift-day"><div class="num">'+dayNum+'</div><div class="dow">'+dowStr+'</div></div><div class="shift-meta"><div class="shift-title">'+esc(s.desc)+'</div><div class="shift-sub"><span class="pill manual">Manual</span></div></div><div style="display:flex;align-items:center;gap:8px"><div class="shift-amt">'+fmtEUR(s.amount)+'</div><button onclick="delManual('+s.id+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:16px;padding:2px">\u00d7</button></div></div>';
+              var m=entry.item,d=new Date(m.date+'T12:00');
+              var dayNum=d.getDate(),dowStr=d.toLocaleDateString('en-IE',{weekday:'short'}).toUpperCase().slice(0,3);
+              html+='<div class="shift-row">';
+              html+='<div class="shift-day"><div class="num">'+dayNum+'</div><div class="dow">'+dowStr+'</div></div>';
+              html+='<div class="shift-meta"><div class="shift-title">'+esc(m.desc)+'</div><div class="shift-sub"><span class="pill manual">Manual</span></div></div>';
+              html+='<div style="display:flex;align-items:center;gap:8px"><div class="shift-amt">'+fmtEUR(m.amount)+'</div>';
+              html+='<button onclick="delManual('+m.id+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:18px;padding:2px">&times;</button></div></div>';
               return;
             }
-            if(editingShiftId===s.id){html+=buildEditFormHTML(s);return;}
-            var totalH=s.th||0,barSegs='';
-            var split=s.split||[];
-            if(!split.length&&s.hm){for(var bid in s.hm){var bnd=getBand(bid);if(bnd)barSegs+='<span style="background:'+bnd.color+';width:'+(totalH>0?(s.hm[bid]||0)/totalH*100:0)+'%"></span>';}}
-            else{for(var i=0;i<split.length;i++){var b=split[i];barSegs+='<span style="background:'+b.color+';width:'+(totalH>0?b.hours/totalH*100:0)+'%"></span>';}}
-            var bhFlag=(s.bhDates&&s.bhDates.length)||s.bh?' \uD83C\uDFF3\uFE0F':'';
-            var shiftTitle=s.tplName?s.tplName:(s.start+'\u2013'+s.end);
-            var shiftTimes=s.tplName?(s.start+'\u2013'+s.end):'';
+            var s=entry.shift,d=new Date(entry.date+'T12:00');
+            var dayNum=d.getDate(),dowStr=d.toLocaleDateString('en-IE',{weekday:'short'}).toUpperCase().slice(0,3);
+            if(editingShiftId===s.id&&entry.isFirst){html+=buildEditFormHTML(s);return;}
+            if(editingShiftId===s.id&&!entry.isFirst)return;
+            var totalH=entry.hours,barSegs='';
+            (entry.bands||[]).forEach(function(b){barSegs+='<span style="background:'+b.color+';width:'+(totalH>0?b.hours/totalH*100:0)+'%"></span>';});
+            var timeStr=entry.dStart+'\u2013'+(entry.dEnd==='00:00'?'24:00':entry.dEnd);
+            var titleStr=entry.isFirst?(s.tplName||timeStr):'(cont.) '+timeStr;
+            var subTime=s.tplName&&entry.isFirst?' \u00b7 '+timeStr:'';
+            var bhPill=s.bh?'<span class="pill bh">BH</span>':'';
             html+='<div class="shift-row" style="cursor:pointer" onclick="startEdit('+s.id+')">';
             html+='<div class="shift-day"><div class="num">'+dayNum+'</div><div class="dow">'+dowStr+'</div></div>';
             html+='<div class="shift-meta">';
-            html+='<div class="shift-title">'+esc(shiftTitle)+(shiftTimes?' <span style="color:var(--muted);font-weight:400">&middot; '+shiftTimes+'</span>':'')+(bhFlag?bhFlag:'')+'</div>';
-            html+='<div class="shift-sub"><span>'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+(s.bh?'<span class="pill bh">BH</span>':'')+'</div>';
+            html+='<div class="shift-title">'+esc(titleStr)+subTime+'</div>';
+            html+='<div class="shift-sub"><span>'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+bhPill+'</div>';
             html+='</div>';
-            var rowPay=getShiftPayForPeriod(s,k);
-            html+='<div style="display:flex;align-items:center;gap:6px"><div class="shift-amt">'+fmtEUR(rowPay)+'</div><button onclick="event.stopPropagation();delShift('+s.id+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:18px;padding:2px;line-height:1">&times;</button></div>';
+            html+='<div style="display:flex;align-items:center;gap:6px"><div class="shift-amt">'+fmtEUR(entry.pay)+'</div>';
+            html+='<button onclick="event.stopPropagation();delShift('+s.id+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:18px;padding:2px">&times;</button></div>';
             html+='</div>';
           });
           html+='</div>';
