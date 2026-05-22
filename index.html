@@ -479,7 +479,7 @@ function splitShift(date,start,end,bh,breakMin,breakStart){
   if(totalMin<=0)return[];
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
-  if(bs!==null&&breakMin>0)breakRanges.push([bs,bs+breakMin]);
+  if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var buckets={};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
@@ -517,7 +517,7 @@ function splitShiftByDate(date,start,end,bh,breakMin,breakStart){
   if(totalMin<=0)return{};
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
-  if(bs!==null&&breakMin>0)breakRanges.push([bs,bs+breakMin]);
+  if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var byDate={};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
@@ -564,7 +564,7 @@ function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme){
   var totalMin=e>s?e-s:(1440-s)+e;
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
-  if(bs!==null&&breakMin>0)breakRanges.push([bs,bs+breakMin]);
+  if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var crosses=e<=s,day1=[],day2=[];
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
