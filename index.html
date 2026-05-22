@@ -899,7 +899,15 @@ function buildListHTML(){
         manualEntries.forEach(function(m){if(getPeriodKey(m.date)===k)dayEntries.push({type:'manual',date:m.date,item:m});});
         dayEntries.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
         var periodPay=0,periodHrs=0;
-        dayEntries.forEach(function(e){if(e.type==='manual')periodPay+=e.item.amount||0;else{periodHrs+=e.hours||0;periodPay+=e.pay||0;}});
+        dayEntries.forEach(function(e){
+          if(e.type==='manual'){periodPay+=e.item.amount||0;}
+          else{
+            // For hours: use dateSplit hours (correctly break-adjusted after recalc)
+            // For regular shifts with no dateSplit, use s.th which is always correct
+            var hrs=e.shift.dateSplit?e.hours:(e.shift.th||0);
+            periodHrs+=hrs;periodPay+=e.pay||0;
+          }
+        });
         var totalItems=dayEntries.length;
         var cardCls='period-card'+(isCurrent?' current':'');
         var chevCls='chev'+(open?' open':'');
@@ -1279,9 +1287,9 @@ function openDayModal(ds){
 }
 (function(){var s=document.getElementById('day-sheet'),sy=0;if(!s)return;s.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;},{passive:true});s.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-sy>60)closeDayModal();},{passive:true});})();
 loadData();
-// Retroactively build dateSplit for overnight shifts that predate this feature
+// Recalculate dateSplit for all overnight shifts to ensure breaks are correctly applied
 shifts.forEach(function(s){
-  if(!s.dateSplit&&s.start&&s.end&&isOvernight(s.start,s.end)){
+  if(s.start&&s.end&&isOvernight(s.start,s.end)){
     s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bh||false,s.breakMin||0,s.breakStart||'');
   }
 });
