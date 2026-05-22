@@ -941,23 +941,26 @@ function buildListHTML(){
             }
             var s=entry.shift,d=new Date(entry.date+'T12:00');
             var dayNum=d.getDate(),dowStr=d.toLocaleDateString('en-IE',{weekday:'short'}).toUpperCase().slice(0,3);
-            if(editingShiftId===s.id&&entry.isFirst){html+=buildEditFormHTML(s);return;}
             if(editingShiftId===s.id&&!entry.isFirst)return;
+            var isEditing=editingShiftId===s.id;
             var totalH=entry.hours,barSegs='';
             (entry.bands||[]).forEach(function(b){barSegs+='<span style="background:'+b.color+';width:'+(totalH>0?b.hours/totalH*100:0)+'%"></span>';});
             var timeStr=entry.dStart+'\u2013'+(entry.dEnd==='00:00'?'24:00':entry.dEnd);
             var titleStr=entry.isFirst?(s.tplName||timeStr):'(cont.) '+timeStr;
             var subTime=s.tplName&&entry.isFirst?' \u00b7 '+timeStr:'';
             var bhPill=s.bh?'<span class="pill bh">BH</span>':'';
-            html+='<div class="shift-row" style="cursor:pointer" onclick="startEdit('+s.id+')">';
+            var toggleFn=isEditing?'cancelEdit()':'startEdit('+s.id+')';
+            html+='<div class="shift-row" style="cursor:pointer;'+(isEditing?'background:var(--cream-deep)':'')+'" onclick="'+toggleFn+'">';
             html+='<div class="shift-day"><div class="num">'+dayNum+'</div><div class="dow">'+dowStr+'</div></div>';
             html+='<div class="shift-meta">';
             html+='<div class="shift-title">'+esc(titleStr)+subTime+'</div>';
             html+='<div class="shift-sub"><span>'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+bhPill+'</div>';
             html+='</div>';
             html+='<div style="display:flex;align-items:center;gap:6px"><div class="shift-amt">'+fmtEUR(entry.pay)+'</div>';
+            html+='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="transition:transform .2s;'+(isEditing?'transform:rotate(90deg)':'')+'"><polyline points="9 6 15 12 9 18"/></svg>';
             html+='<button onclick="event.stopPropagation();delShift('+s.id+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:18px;padding:2px">&times;</button></div>';
             html+='</div>';
+            if(isEditing){html+=buildEditFormHTML(s);}
           });
           html+='</div>';
         }
@@ -970,14 +973,14 @@ function buildListHTML(){
 
 function buildEditFormHTML(s){
   var html='<div style="background:var(--cream-card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:4px">';
-  html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line-soft)"><div style="font-size:13px;font-weight:600">Editing shift</div></div>';
+  html+='<div style="padding:10px 14px 0 14px;font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Edit shift</div>';
   html+='<div class="edit-form">';
   html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Date</label><input type="date" id="ed-date-'+s.id+'" value="'+s.date+'" onchange="refreshEditBK('+s.id+')"></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Start</label><input type="time" id="ed-start-'+s.id+'" value="'+s.start+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div><div class="field"><label class="lbl">End</label><input type="time" id="ed-end-'+s.id+'" value="'+s.end+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Break</label><select id="ed-brk-'+s.id+'" onchange="refreshEditBK('+s.id+')"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">2 hours</option></select></div><div class="field"><label class="lbl">Break Start</label><input type="time" id="ed-brkst-'+s.id+'" value="'+(s.breakStart||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
   html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(s.bh?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label></div>';
   html+='<div id="ed-bk-'+s.id+'"></div>';
-  html+='<div class="edit-actions"><button class="btn-edit-cancel" onclick="cancelEdit()">Cancel</button><button class="btn-edit-save" onclick="saveEdit('+s.id+')">Save Changes</button></div>';
+  html+='<div class="edit-actions"><button class="btn-edit-save" onclick="saveEdit('+s.id+')">Save Changes</button></div>';
   html+='</div></div>';
   setTimeout(function(){var brkEl=document.getElementById('ed-brk-'+s.id);if(brkEl)brkEl.value=String(s.breakMin||0);refreshEditBK(s.id);},0);
   return html;
