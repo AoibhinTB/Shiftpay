@@ -386,8 +386,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 </div>
 <div class="scrim" id="edit-scrim" onclick="cancelEdit()"></div>
 <div class="sheet" id="edit-sheet">
-  <div class="sheet-grab" onclick="cancelEdit()" style="cursor:pointer;padding:8px 0;margin-top:4px"></div>
-  <div id="edit-sheet-body" style="padding:0 0 16px;max-height:75vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
+  <div id="edit-sheet-body" style="padding:0 0 16px;max-height:80vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
 </div>
 <div id="toast"></div>
 <script>
@@ -974,7 +973,7 @@ function buildListHTML(){
 
 function buildEditFormHTML(s){
   var html='<div style="background:var(--cream-card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:4px">';
-  html+='<div style="padding:10px 14px 0 14px;font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Edit shift</div>';
+  html+='<div style="border-bottom:1px solid var(--line-soft);padding:10px 24px 12px;position:relative;text-align:center"><div style="width:36px;height:4px;border-radius:999px;background:var(--cream-deep);margin:0 auto 10px"></div><div style="font-size:16px;font-weight:700">Edit shift</div><button onclick="cancelEdit()" style="position:absolute;right:16px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);font-size:26px;line-height:1;padding:0">&times;</button></div>';
   html+='<div class="edit-form" style="padding:16px 24px">';
   html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Date</label><input type="date" id="ed-date-'+s.id+'" value="'+s.date+'" onchange="refreshEditBK('+s.id+')"></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Start</label><input type="time" id="ed-start-'+s.id+'" value="'+s.start+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div><div class="field"><label class="lbl">End</label><input type="time" id="ed-end-'+s.id+'" value="'+s.end+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
