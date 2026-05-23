@@ -727,8 +727,7 @@ function logAnother(){document.getElementById('success-scrim').className='scrim'
 
 
 function getShiftBandsForPeriod(s,pk){
-  // Returns [{id,name,color,hours,amount}] for the portion of shift s that falls in period pk
-  if(s.dateSplit){
+  if(s.dateSplit&&Object.keys(s.dateSplit).length){
     var combined={};
     for(var ds in s.dateSplit){
       if(getPeriodKey(ds)===pk){
@@ -741,7 +740,8 @@ function getShiftBandsForPeriod(s,pk){
     var arr=[];for(var k in combined)arr.push(combined[k]);
     return arr.sort(function(a,b){return b.amount-a.amount;});
   }
-  // No dateSplit - use stored split or hm/pm
+  // No dateSplit — only return bands if this shift is in the requested period
+  if(getPeriodKey(s.date)!==pk)return[];
   var split=s.split||[];
   if(!split.length&&s.hm){for(var bid in s.hm){var bnd=getBand(bid);if(bnd)split.push({id:bid,name:bnd.name,color:bnd.color,hours:s.hm[bid]||0,amount:s.pm[bid]||0,slip:bnd.slip||0});}}
   return split;
@@ -957,7 +957,7 @@ function buildListHTML(){
             html+='<div class="shift-day"><div class="num">'+dayNum+'</div><div class="dow">'+dowStr+'</div></div>';
             html+='<div class="shift-meta">';
             html+='<div class="shift-title">'+esc(titleStr)+subTime+'</div>';
-            html+='<div class="shift-sub"><span>'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+bhPill+'</div>';
+            html+='<div class="shift-sub"><span style="min-width:36px;display:inline-block">'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+bhPill+'</div>';
             html+='</div>';
             html+='<div style="display:flex;align-items:center;gap:6px"><div class="shift-amt">'+fmtEUR(entry.pay)+'</div>';
             html+='<button onclick="event.stopPropagation();delShift('+s.id+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:18px;padding:2px">&times;</button></div>';
