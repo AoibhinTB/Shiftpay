@@ -560,6 +560,8 @@ function splitShiftByDate(date,start,end,bh,breakMin,breakStart){
   return result;
 }
 
+function recomputeDateSplit(s){if(s.start&&s.end&&isOvernight(s.start,s.end))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bh||false,s.breakMin||0,s.breakStart||'');else delete s.dateSplit;}
+
 function shiftTotalHours(date,start,end,breakMin){var s=parseTime(start),e=parseTime(end);if(s===null||e===null)return 0;var totalMin=e>s?e-s:(1440-s)+e;return(totalMin-breakMin)/60;}
 
 function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme){
@@ -702,6 +704,7 @@ function addShift(){
   var bhDates=[];if(logBH)bhDates.push(date);if(logBHNext&&isOvernight(start,end))bhDates.push(nextDayStr(date));
   var tplName='';if(activeTplId){for(var ti=0;ti<shiftTemplates.length;ti++)if(shiftTemplates[ti].id===activeTplId){tplName=shiftTemplates[ti].name;break;}}
   shifts.push({id:Date.now(),date:date,start:start,end:end,bh:logBH,bhNext:logBHNext,bhDates:bhDates,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands)),tplName:tplName});
+  recomputeDateSplit(shifts[shifts.length-1]);
   persist();hasInitedPeriod=false;
   var payslipD=getNextPayslipDate();showSuccess(totalAmt,fmtPayslipDate(payslipD));
   document.getElementById('l-start').value='';document.getElementById('l-end').value='';
@@ -1031,6 +1034,7 @@ function saveEdit(id){
   var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
   if(!s)return;
   Object.assign(s,{date:date,start:start,end:end,bh:bh,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands))});
+  recomputeDateSplit(s);
   persist();toast('Shift updated');cancelEdit();renderSummary();
 }
 function delShift(id){shifts=shifts.filter(function(s){return s.id!==id;});persist();hasInitedPeriod=false;renderSummary();toast('Shift removed');}
@@ -1305,12 +1309,8 @@ function openDayModal(ds){
 }
 (function(){var s=document.getElementById('day-sheet'),sy=0;if(!s)return;s.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;},{passive:true});s.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-sy>60)closeDayModal();},{passive:true});})();
 loadData();
-// Recalculate dateSplit for all overnight shifts to ensure breaks are correctly applied
-shifts.forEach(function(s){
-  if(s.start&&s.end&&isOvernight(s.start,s.end)){
-    s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bh||false,s.breakMin||0,s.breakStart||'');
-  }
-});
+// Backfill dateSplit on overnight shifts saved before recomputeDateSplit existed
+shifts.forEach(recomputeDateSplit);
 var pooEl=document.getElementById('poo-egg');if(pooEl&&pooOn)pooEl.className='poo-egg on';
 setLogDate(new Date().toISOString().split('T')[0]);
 var psEl=document.getElementById('period-select');if(psEl)psEl.value=settings.periodType;
