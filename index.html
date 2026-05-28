@@ -901,7 +901,7 @@ function buildListHTML(){
           }
         });
         manualEntries.forEach(function(m){if(getPeriodKey(m.date)===k)dayEntries.push({type:'manual',date:m.date,item:m});});
-        dayEntries.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+        dayEntries.sort(function(a,b){var dd=new Date(b.date)-new Date(a.date);if(dd!==0)return dd;return (b.dStart||'00:00').localeCompare(a.dStart||'00:00');});
         var periodPay=0,periodHrs=0;
         dayEntries.forEach(function(e){
           if(e.type==='manual'){periodPay+=e.item.amount||0;}
