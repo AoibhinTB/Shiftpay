@@ -259,6 +259,10 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
             </div>
           </div>
           <div id="overnight-note" style="display:none;margin-top:8px;font-size:12px;color:var(--blue)"></div>
+          <div id="l-ends-next-row" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft);align-items:center;justify-content:space-between">
+            <div><div style="font-size:13.5px;font-weight:500;margin-bottom:2px">Ends next day</div><div class="tiny">Use this for shifts over 24 hours</div></div>
+            <button class="toggle" id="l-ends-next-toggle" onclick="toggleEndsNextDay()"></button>
+          </div>
         </div>
         <div class="card">
           <div class="lbl" style="margin-bottom:10px">Unpaid break</div>
@@ -398,7 +402,7 @@ var settings={periodType:'weekly',nextPayslipDate:''};
 var pooOn=false,onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0;
-var logBH=false,logBHNext=false,hasInitedPeriod=false,activeTplId=null;
+var logBH=false,logBHNext=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
 
 function persist(){try{localStorage.setItem('shiftpay.bands',JSON.stringify(bands));localStorage.setItem('shiftpay.shifts',JSON.stringify(shifts));localStorage.setItem('shiftpay.templates',JSON.stringify(shiftTemplates));localStorage.setItem('shiftpay.manuals',JSON.stringify(manualEntries));localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}catch(e){}}
 function loadData(){
@@ -476,10 +480,11 @@ function fmtEUR(n){return'\u20ac'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,'
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on');},2000);}
 
-function splitShift(date,start,end,bh,breakMin,breakStart){
+function splitShift(date,start,end,bh,breakMin,breakStart,endsNextDay){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return[];
-  var totalMin=e>s?e-s:(1440-s)+e;
+  var nextDay=endsNextDay||e<=s;
+  var totalMin=(e-s)+(nextDay?1440:0);
   if(totalMin<=0)return[];
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
@@ -514,10 +519,11 @@ function splitShift(date,start,end,bh,breakMin,breakStart){
   return result;
 }
 // Split shift returning per-date buckets for overnight attribution
-function splitShiftByDate(date,start,end,bh,breakMin,breakStart){
+function splitShiftByDate(date,start,end,bh,breakMin,breakStart,endsNextDay){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return{};
-  var totalMin=e>s?e-s:(1440-s)+e;
+  var nextDay=endsNextDay||e<=s;
+  var totalMin=(e-s)+(nextDay?1440:0);
   if(totalMin<=0)return{};
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
@@ -560,18 +566,19 @@ function splitShiftByDate(date,start,end,bh,breakMin,breakStart){
   return result;
 }
 
-function recomputeDateSplit(s){if(s.start&&s.end&&isOvernight(s.start,s.end))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bh||false,s.breakMin||0,s.breakStart||'');else delete s.dateSplit;}
+function recomputeDateSplit(s){if(s.start&&s.end&&(isOvernight(s.start,s.end)||s.endsNextDay))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bh||false,s.breakMin||0,s.breakStart||'',s.endsNextDay||false);else delete s.dateSplit;}
 
-function shiftTotalHours(date,start,end,breakMin){var s=parseTime(start),e=parseTime(end);if(s===null||e===null)return 0;var totalMin=e>s?e-s:(1440-s)+e;return(totalMin-breakMin)/60;}
+function shiftTotalHours(date,start,end,breakMin,endsNextDay){var s=parseTime(start),e=parseTime(end);if(s===null||e===null)return 0;var nextDay=endsNextDay||e<=s;var totalMin=(e-s)+(nextDay?1440:0);return(totalMin-breakMin)/60;}
 
-function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme){
+function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme,endsNextDay){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return'';
-  var totalMin=e>s?e-s:(1440-s)+e;
+  var nextDay=endsNextDay||e<=s;
+  var totalMin=(e-s)+(nextDay?1440:0);
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
-  var crosses=e<=s,day1=[],day2=[];
+  var crosses=nextDay,day1=[],day2=[];
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
     var inBreak=breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];});
@@ -657,6 +664,7 @@ function applyTpl(id){
 }
 function toggleBH(){logBH=!logBH;var btn=document.getElementById('l-bh-toggle');if(btn)btn.className='toggle'+(logBH?' on':'');refreshLog();}
 function toggleBHNext(){logBHNext=!logBHNext;var btn=document.getElementById('l-bh-next-toggle');if(btn)btn.className='toggle'+(logBHNext?' on':'');refreshLog();}
+function toggleEndsNextDay(){logEndsNextDay=!logEndsNextDay;var btn=document.getElementById('l-ends-next-toggle');if(btn)btn.className='toggle'+(logEndsNextDay?' on':'');refreshLog();}
 
 function refreshLog(){
   var date=document.getElementById('l-date').value;
@@ -664,15 +672,23 @@ function refreshLog(){
   var end=document.getElementById('l-end').value;
   var breakMin=parseInt(document.getElementById('l-break-dur').value)||0;
   var breakStart=document.getElementById('l-break-start').value;
+  var crosses=start&&end&&isOvernight(start,end);
+  var endsNextRow=document.getElementById('l-ends-next-row');
+  if(endsNextRow){
+    var canEndsNext=start&&end&&validTime(start)&&validTime(end)&&!crosses;
+    endsNextRow.style.display=canEndsNext?'flex':'none';
+    if(!canEndsNext&&logEndsNextDay){logEndsNextDay=false;var ent=document.getElementById('l-ends-next-toggle');if(ent)ent.className='toggle';}
+  }
+  var spansTwoDays=crosses||logEndsNextDay;
   var ovEl=document.getElementById('overnight-note');
-  if(ovEl){var ov=start&&end&&isOvernight(start,end);ovEl.style.display=ov?'block':'none';if(ov)ovEl.textContent='Overnight shift';}
+  if(ovEl){ovEl.style.display=spansTwoDays?'block':'none';if(spansTwoDays)ovEl.textContent=logEndsNextDay?'Spans into next day':'Overnight shift';}
   var bhNextRow=document.getElementById('l-bh-next-row');
-  if(bhNextRow)bhNextRow.style.display=(start&&end&&isOvernight(start,end)&&logBH)?'block':'none';
+  if(bhNextRow)bhNextRow.style.display=(start&&end&&spansTwoDays&&logBH)?'block':'none';
   var brkStartEl=document.getElementById('l-break-start');if(brkStartEl)brkStartEl.disabled=breakMin===0;
   var bkEl=document.getElementById('log-bk'),saveBtn=document.getElementById('l-save-btn');
   if(!date||!start||!end||!validTime(start)||!validTime(end)){if(bkEl)bkEl.innerHTML='';if(saveBtn)saveBtn.style.display='none';return;}
-  var split=splitShift(date,start,end,logBH,breakMin,breakStart);
-  var totalH=shiftTotalHours(date,start,end,breakMin);
+  var split=splitShift(date,start,end,logBH,breakMin,breakStart,logEndsNextDay);
+  var totalH=shiftTotalHours(date,start,end,breakMin,logEndsNextDay);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   if(bkEl){
     var parts=totalAmt.toFixed(2).split('.'),fmted=parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
@@ -680,7 +696,7 @@ function refreshLog(){
     html+='<div class="lbl" style="margin-bottom:6px">This shift pays</div>';
     html+='<div class="bk-amt">\u20ac'+fmted+'<span style="font-size:.55em;opacity:.7">.'+(parts[1]||'00')+'</span></div>';
     html+='<div class="tiny" style="margin-bottom:2px">'+totalH.toFixed(1)+'h gross</div>';
-    html+=buildRibbonHTML(date,start,end,logBH,breakMin,breakStart,'light');
+    html+=buildRibbonHTML(date,start,end,logBH,breakMin,breakStart,'light',logEndsNextDay);
     if(split.length>0){
       html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:8px">';
       for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span style="color:var(--muted);font-size:12px">'+b.hours.toFixed(1)+'h \u00b7 '+fmtEUR(b.rate)+'/h</span></span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
@@ -697,21 +713,23 @@ function addShift(){
   var breakMin=parseInt(document.getElementById('l-break-dur').value)||0;
   var breakStart=document.getElementById('l-break-start').value;
   if(!date||!start||!end||!validTime(start)||!validTime(end))return;
-  var split=splitShift(date,start,end,logBH,breakMin,breakStart);
-  var totalH=shiftTotalHours(date,start,end,breakMin);
+  var split=splitShift(date,start,end,logBH,breakMin,breakStart,logEndsNextDay);
+  var totalH=shiftTotalHours(date,start,end,breakMin,logEndsNextDay);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
-  var bhDates=[];if(logBH)bhDates.push(date);if(logBHNext&&isOvernight(start,end))bhDates.push(nextDayStr(date));
+  var spans=isOvernight(start,end)||logEndsNextDay;
+  var bhDates=[];if(logBH)bhDates.push(date);if(logBHNext&&spans)bhDates.push(nextDayStr(date));
   var tplName='';if(activeTplId){for(var ti=0;ti<shiftTemplates.length;ti++)if(shiftTemplates[ti].id===activeTplId){tplName=shiftTemplates[ti].name;break;}}
-  shifts.push({id:Date.now(),date:date,start:start,end:end,bh:logBH,bhNext:logBHNext,bhDates:bhDates,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands)),tplName:tplName});
+  shifts.push({id:Date.now(),date:date,start:start,end:end,bh:logBH,bhNext:logBHNext,endsNextDay:logEndsNextDay,bhDates:bhDates,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands)),tplName:tplName});
   recomputeDateSplit(shifts[shifts.length-1]);
   persist();hasInitedPeriod=false;
   var payslipD=getNextPayslipDate();showSuccess(totalAmt,fmtPayslipDate(payslipD));
   document.getElementById('l-start').value='';document.getElementById('l-end').value='';
   document.getElementById('l-break-dur').value='0';document.getElementById('l-break-start').value='';
-  logBH=false;logBHNext=false;
+  logBH=false;logBHNext=false;logEndsNextDay=false;
   var bt=document.getElementById('l-bh-toggle');if(bt)bt.className='toggle';
   var bt2=document.getElementById('l-bh-next-toggle');if(bt2)bt2.className='toggle';
+  var bt3=document.getElementById('l-ends-next-toggle');if(bt3)bt3.className='toggle';
   document.getElementById('log-bk').innerHTML='';document.getElementById('l-save-btn').style.display='none';
   activeTplId=null;renderTplChips();
 }
@@ -981,7 +999,7 @@ function buildEditFormHTML(s){
   html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Date</label><input type="date" id="ed-date-'+s.id+'" value="'+s.date+'" onchange="refreshEditBK('+s.id+')"></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Start</label><input type="time" id="ed-start-'+s.id+'" value="'+s.start+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div><div class="field"><label class="lbl">End</label><input type="time" id="ed-end-'+s.id+'" value="'+s.end+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Break</label><select id="ed-brk-'+s.id+'" onchange="refreshEditBK('+s.id+')"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">2 hours</option></select></div><div class="field"><label class="lbl">Break Start</label><input type="time" id="ed-brkst-'+s.id+'" value="'+(s.breakStart||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
-  html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(s.bh?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label></div>';
+  html+='<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(s.bh?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-end1-'+s.id+'" '+(s.endsNextDay?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Ends next day</span></label></div>';
   html+='<div id="ed-bk-'+s.id+'"></div>';
   html+='<div style="padding:12px 24px 8px"><button class="btn-primary" onclick="saveEdit('+s.id+')">Save Changes</button></div>';
   html+='</div></div>';
@@ -1012,8 +1030,9 @@ function refreshEditBK(id){
   var date=dateEl.value,start=startEl.value,end=endEl.value;
   var breakMin=parseInt(brkEl?brkEl.value:'0')||0,breakStart=brkStEl?brkStEl.value:'';
   var bh=document.getElementById('ed-bh-'+id)?document.getElementById('ed-bh-'+id).checked:false;
+  var ende=document.getElementById('ed-end1-'+id)?document.getElementById('ed-end1-'+id).checked:false;
   if(!date||!start||!end){bkEl.innerHTML='';return;}
-  var split=splitShift(date,start,end,bh,breakMin,breakStart);
+  var split=splitShift(date,start,end,bh,breakMin,breakStart,ende);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var html='<div style="padding:8px 0;border-top:1px solid var(--line-soft)">';
   for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';}
@@ -1027,13 +1046,14 @@ function saveEdit(id){
   var breakMin=parseInt(document.getElementById('ed-brk-'+id)?document.getElementById('ed-brk-'+id).value:'0')||0;
   var breakStart=document.getElementById('ed-brkst-'+id)?document.getElementById('ed-brkst-'+id).value:'';
   var bh=document.getElementById('ed-bh-'+id)?document.getElementById('ed-bh-'+id).checked:false;
+  var ende=document.getElementById('ed-end1-'+id)?document.getElementById('ed-end1-'+id).checked:false;
   if(!date||!start||!end)return;
-  var split=splitShift(date,start,end,bh,breakMin,breakStart);
-  var totalH=shiftTotalHours(date,start,end,breakMin),totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
+  var split=splitShift(date,start,end,bh,breakMin,breakStart,ende);
+  var totalH=shiftTotalHours(date,start,end,breakMin,ende),totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
   var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
   if(!s)return;
-  Object.assign(s,{date:date,start:start,end:end,bh:bh,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands))});
+  Object.assign(s,{date:date,start:start,end:end,bh:bh,endsNextDay:ende,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands))});
   recomputeDateSplit(s);
   persist();toast('Shift updated');cancelEdit();renderSummary();
 }
