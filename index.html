@@ -681,7 +681,7 @@ function refreshLog(){
   }
   var spansTwoDays=crosses||logEndsNextDay;
   var ovEl=document.getElementById('overnight-note');
-  if(ovEl){ovEl.style.display=spansTwoDays?'block':'none';if(spansTwoDays)ovEl.textContent=logEndsNextDay?'Spans into next day':'Overnight shift';}
+  if(ovEl){ovEl.style.display=crosses?'block':'none';if(crosses)ovEl.textContent='Overnight shift';}
   var bhNextRow=document.getElementById('l-bh-next-row');
   if(bhNextRow)bhNextRow.style.display=(start&&end&&spansTwoDays&&logBH)?'block':'none';
   var brkStartEl=document.getElementById('l-break-start');if(brkStartEl)brkStartEl.disabled=breakMin===0;

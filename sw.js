@@ -1,4 +1,4 @@
-var CACHE = 'shiftpay-v7';
+var CACHE = 'shiftpay-v8';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
