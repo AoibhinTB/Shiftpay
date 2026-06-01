@@ -279,10 +279,11 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
             <div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Bank holiday</div><div class="tiny">Applies the bank holiday rate</div></div>
             <button class="toggle" id="l-bh-toggle" onclick="toggleBH()"></button>
           </div>
-          <div id="l-bh-next-row" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <div><div style="font-size:13.5px;font-weight:500;margin-bottom:2px">Second day also BH</div><div class="tiny">Overnight shift crossing into a holiday</div></div>
-              <button class="toggle" id="l-bh-next-toggle" onclick="toggleBHNext()"></button>
+          <div id="l-bh-days-row" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
+            <div class="lbl" style="margin-bottom:8px">Which day is BH?</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="day-pill" id="l-bh-day1-pill" onclick="toggleBHDay(1)"></button>
+              <button class="day-pill" id="l-bh-day2-pill" onclick="toggleBHDay(2)"></button>
             </div>
           </div>
         </div>
@@ -402,7 +403,7 @@ var settings={periodType:'weekly',nextPayslipDate:''};
 var pooOn=false,onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0;
-var logBH=false,logBHNext=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
+var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
 
 function persist(){try{localStorage.setItem('shiftpay.bands',JSON.stringify(bands));localStorage.setItem('shiftpay.shifts',JSON.stringify(shifts));localStorage.setItem('shiftpay.templates',JSON.stringify(shiftTemplates));localStorage.setItem('shiftpay.manuals',JSON.stringify(manualEntries));localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}catch(e){}}
 function loadData(){
@@ -480,7 +481,7 @@ function fmtEUR(n){return'\u20ac'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,'
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on');},2000);}
 
-function splitShift(date,start,end,bh,breakMin,breakStart,endsNextDay){
+function splitShift(date,start,end,bhDates,breakMin,breakStart,endsNextDay){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return[];
   var nextDay=endsNextDay||e<=s;
@@ -489,12 +490,15 @@ function splitShift(date,start,end,bh,breakMin,breakStart,endsNextDay){
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
+  var bhSet=(bhDates&&bhDates.length)?bhDates:[];
   var buckets={};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
     if(breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];}))continue;
+    var slotDate=new Date(baseDate);slotDate.setDate(slotDate.getDate()+dayOffset);
+    var slotIsBH=bhSet.indexOf(dateStr(slotDate))!==-1;
     var pick=null;
-    if(bh)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
+    if(slotIsBH)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
     if(!pick){
       var matches=[];
       for(var i=0;i<bands.length;i++){
@@ -519,7 +523,7 @@ function splitShift(date,start,end,bh,breakMin,breakStart,endsNextDay){
   return result;
 }
 // Split shift returning per-date buckets for overnight attribution
-function splitShiftByDate(date,start,end,bh,breakMin,breakStart,endsNextDay){
+function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return{};
   var nextDay=endsNextDay||e<=s;
@@ -528,15 +532,17 @@ function splitShiftByDate(date,start,end,bh,breakMin,breakStart,endsNextDay){
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
+  var bhSet=(bhDates&&bhDates.length)?bhDates:[];
   var byDate={};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
     if(breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];}))continue;
     var slotDate=new Date(baseDate);slotDate.setDate(slotDate.getDate()+dayOffset);
     var slotDateStr=dateStr(slotDate);
+    var slotIsBH=bhSet.indexOf(slotDateStr)!==-1;
     if(!byDate[slotDateStr])byDate[slotDateStr]={};
     var pick=null;
-    if(bh)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
+    if(slotIsBH)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
     if(!pick){
       var matches=[];
       for(var i=0;i<bands.length;i++){
@@ -566,11 +572,11 @@ function splitShiftByDate(date,start,end,bh,breakMin,breakStart,endsNextDay){
   return result;
 }
 
-function recomputeDateSplit(s){if(s.start&&s.end&&(isOvernight(s.start,s.end)||s.endsNextDay))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bh||false,s.breakMin||0,s.breakStart||'',s.endsNextDay||false);else delete s.dateSplit;}
+function recomputeDateSplit(s){if(s.start&&s.end&&(isOvernight(s.start,s.end)||s.endsNextDay))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false);else delete s.dateSplit;}
 
 function shiftTotalHours(date,start,end,breakMin,endsNextDay){var s=parseTime(start),e=parseTime(end);if(s===null||e===null)return 0;var nextDay=endsNextDay||e<=s;var totalMin=(e-s)+(nextDay?1440:0);return(totalMin-breakMin)/60;}
 
-function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme,endsNextDay){
+function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNextDay){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return'';
   var nextDay=endsNextDay||e<=s;
@@ -578,6 +584,7 @@ function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme,endsNextDay
   var baseDate=new Date(date+'T00:00:00'),baseDow=irishDow(baseDate);
   var bs=parseTime(breakStart),breakRanges=[];
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
+  var bhSet=(bhDates&&bhDates.length)?bhDates:[];
   var crosses=nextDay,day1=[],day2=[];
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
@@ -585,8 +592,10 @@ function buildRibbonHTML(date,start,end,bh,breakMin,breakStart,theme,endsNextDay
     var color,label;
     if(inBreak){color='break';label='Break';}
     else{
+      var slotDate=new Date(baseDate);slotDate.setDate(slotDate.getDate()+dayOffset);
+      var slotIsBH=bhSet.indexOf(dateStr(slotDate))!==-1;
       var pick=null;
-      if(bh)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
+      if(slotIsBH)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
       if(!pick){
         var matches=[];
         for(var i=0;i<bands.length;i++){
@@ -662,9 +671,11 @@ function applyTpl(id){
   document.getElementById('l-break-start').value=t.breakStart||'';
   renderTplChips();refreshLog();
 }
-function toggleBH(){logBH=!logBH;var btn=document.getElementById('l-bh-toggle');if(btn)btn.className='toggle'+(logBH?' on':'');refreshLog();}
-function toggleBHNext(){logBHNext=!logBHNext;var btn=document.getElementById('l-bh-next-toggle');if(btn)btn.className='toggle'+(logBHNext?' on':'');refreshLog();}
+function toggleBH(){logBH=!logBH;if(logBH){logBHDay1=true;logBHDay2=false;}else{logBHDay1=false;logBHDay2=false;}var btn=document.getElementById('l-bh-toggle');if(btn)btn.className='toggle'+(logBH?' on':'');refreshLog();}
+function toggleBHDay(n){if(n===1)logBHDay1=!logBHDay1;else logBHDay2=!logBHDay2;if(!logBHDay1&&!logBHDay2){logBH=false;var bt=document.getElementById('l-bh-toggle');if(bt)bt.className='toggle';}refreshLog();}
 function toggleEndsNextDay(){logEndsNextDay=!logEndsNextDay;var btn=document.getElementById('l-ends-next-toggle');if(btn)btn.className='toggle'+(logEndsNextDay?' on':'');refreshLog();}
+function getBHColor(){for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh')return bands[i].color;return'#d97606';}
+function fmtPillDate(ds){var d=new Date(ds+'T12:00');return d.toLocaleDateString('en-IE',{weekday:'short',day:'numeric',month:'short'});}
 
 function refreshLog(){
   var date=document.getElementById('l-date').value;
@@ -682,12 +693,24 @@ function refreshLog(){
   var spansTwoDays=crosses||logEndsNextDay;
   var ovEl=document.getElementById('overnight-note');
   if(ovEl){ovEl.style.display=crosses?'block':'none';if(crosses)ovEl.textContent='Overnight shift';}
-  var bhNextRow=document.getElementById('l-bh-next-row');
-  if(bhNextRow)bhNextRow.style.display=(start&&end&&spansTwoDays&&logBH)?'block':'none';
+  var bhDays=document.getElementById('l-bh-days-row');
+  var showBHDays=start&&end&&spansTwoDays&&logBH;
+  if(bhDays)bhDays.style.display=showBHDays?'block':'none';
+  if(showBHDays&&date){
+    var bhClr=getBHColor(),nextDate=nextDayStr(date);
+    var p1=document.getElementById('l-bh-day1-pill'),p2=document.getElementById('l-bh-day2-pill');
+    if(p1){p1.textContent=fmtPillDate(date);p1.className='day-pill'+(logBHDay1?' on':'');p1.style.cssText=logBHDay1?'background:'+bhClr+'18;border-color:'+bhClr+';color:'+bhClr:'';}
+    if(p2){p2.textContent=fmtPillDate(nextDate);p2.className='day-pill'+(logBHDay2?' on':'');p2.style.cssText=logBHDay2?'background:'+bhClr+'18;border-color:'+bhClr+';color:'+bhClr:'';}
+  }
   var brkStartEl=document.getElementById('l-break-start');if(brkStartEl)brkStartEl.disabled=breakMin===0;
   var bkEl=document.getElementById('log-bk'),saveBtn=document.getElementById('l-save-btn');
   if(!date||!start||!end||!validTime(start)||!validTime(end)){if(bkEl)bkEl.innerHTML='';if(saveBtn)saveBtn.style.display='none';return;}
-  var split=splitShift(date,start,end,logBH,breakMin,breakStart,logEndsNextDay);
+  var bhDates=[];
+  if(logBH){
+    if(!spansTwoDays){bhDates.push(date);}
+    else{if(logBHDay1)bhDates.push(date);if(logBHDay2)bhDates.push(nextDayStr(date));}
+  }
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,logEndsNextDay);
   var totalH=shiftTotalHours(date,start,end,breakMin,logEndsNextDay);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   if(bkEl){
@@ -696,7 +719,7 @@ function refreshLog(){
     html+='<div class="lbl" style="margin-bottom:6px">This shift pays</div>';
     html+='<div class="bk-amt">\u20ac'+fmted+'<span style="font-size:.55em;opacity:.7">.'+(parts[1]||'00')+'</span></div>';
     html+='<div class="tiny" style="margin-bottom:2px">'+totalH.toFixed(1)+'h gross</div>';
-    html+=buildRibbonHTML(date,start,end,logBH,breakMin,breakStart,'light',logEndsNextDay);
+    html+=buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,'light',logEndsNextDay);
     if(split.length>0){
       html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:8px">';
       for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span style="color:var(--muted);font-size:12px">'+b.hours.toFixed(1)+'h \u00b7 '+fmtEUR(b.rate)+'/h</span></span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
@@ -713,22 +736,25 @@ function addShift(){
   var breakMin=parseInt(document.getElementById('l-break-dur').value)||0;
   var breakStart=document.getElementById('l-break-start').value;
   if(!date||!start||!end||!validTime(start)||!validTime(end))return;
-  var split=splitShift(date,start,end,logBH,breakMin,breakStart,logEndsNextDay);
+  var spans=isOvernight(start,end)||logEndsNextDay;
+  var bhDates=[];
+  if(logBH){
+    if(!spans){bhDates.push(date);}
+    else{if(logBHDay1)bhDates.push(date);if(logBHDay2)bhDates.push(nextDayStr(date));}
+  }
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,logEndsNextDay);
   var totalH=shiftTotalHours(date,start,end,breakMin,logEndsNextDay);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
-  var spans=isOvernight(start,end)||logEndsNextDay;
-  var bhDates=[];if(logBH)bhDates.push(date);if(logBHNext&&spans)bhDates.push(nextDayStr(date));
   var tplName='';if(activeTplId){for(var ti=0;ti<shiftTemplates.length;ti++)if(shiftTemplates[ti].id===activeTplId){tplName=shiftTemplates[ti].name;break;}}
-  shifts.push({id:Date.now(),date:date,start:start,end:end,bh:logBH,bhNext:logBHNext,endsNextDay:logEndsNextDay,bhDates:bhDates,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands)),tplName:tplName});
+  shifts.push({id:Date.now(),date:date,start:start,end:end,bh:bhDates.length>0,endsNextDay:logEndsNextDay,bhDates:bhDates,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands)),tplName:tplName});
   recomputeDateSplit(shifts[shifts.length-1]);
   persist();hasInitedPeriod=false;
   var payslipD=getNextPayslipDate();showSuccess(totalAmt,fmtPayslipDate(payslipD));
   document.getElementById('l-start').value='';document.getElementById('l-end').value='';
   document.getElementById('l-break-dur').value='0';document.getElementById('l-break-start').value='';
-  logBH=false;logBHNext=false;logEndsNextDay=false;
+  logBH=false;logBHDay1=true;logBHDay2=false;logEndsNextDay=false;
   var bt=document.getElementById('l-bh-toggle');if(bt)bt.className='toggle';
-  var bt2=document.getElementById('l-bh-next-toggle');if(bt2)bt2.className='toggle';
   var bt3=document.getElementById('l-ends-next-toggle');if(bt3)bt3.className='toggle';
   document.getElementById('log-bk').innerHTML='';document.getElementById('l-save-btn').style.display='none';
   activeTplId=null;renderTplChips();
@@ -999,7 +1025,9 @@ function buildEditFormHTML(s){
   html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Date</label><input type="date" id="ed-date-'+s.id+'" value="'+s.date+'" onchange="refreshEditBK('+s.id+')"></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Start</label><input type="time" id="ed-start-'+s.id+'" value="'+s.start+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div><div class="field"><label class="lbl">End</label><input type="time" id="ed-end-'+s.id+'" value="'+s.end+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Break</label><select id="ed-brk-'+s.id+'" onchange="refreshEditBK('+s.id+')"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">2 hours</option></select></div><div class="field"><label class="lbl">Break Start</label><input type="time" id="ed-brkst-'+s.id+'" value="'+(s.breakStart||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
-  html+='<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(s.bh?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-end1-'+s.id+'" '+(s.endsNextDay?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Ends next day</span></label></div>';
+  var bhInit=(s.bhDates&&s.bhDates.length>0)||s.bh;
+  html+='<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(bhInit?'checked':'')+' onchange="onEditBHToggle('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-end1-'+s.id+'" '+(s.endsNextDay?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Ends next day</span></label></div>';
+  html+='<div id="ed-bh-days-'+s.id+'" style="display:none;margin:-2px 0 10px"><div class="lbl" style="margin-bottom:6px">Which day is BH?</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="day-pill" id="ed-bh-d1-'+s.id+'" onclick="onEditBHDay('+s.id+',1)"></button><button class="day-pill" id="ed-bh-d2-'+s.id+'" onclick="onEditBHDay('+s.id+',2)"></button></div></div>';
   html+='<div id="ed-bk-'+s.id+'"></div>';
   html+='<div style="padding:12px 24px 8px"><button class="btn-primary" onclick="saveEdit('+s.id+')">Save Changes</button></div>';
   html+='</div></div>';
@@ -1010,12 +1038,30 @@ function startEdit(id){
   var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
   if(!s)return;
   editingShiftId=id;
+  var bhSrc=(s.bhDates&&s.bhDates.length)?s.bhDates:(s.bh?[s.date]:[]);
+  s._editBHDay1=bhSrc.indexOf(s.date)!==-1||(s.bh&&!s.bhDates);
+  s._editBHDay2=bhSrc.indexOf(nextDayStr(s.date))!==-1;
   var body=document.getElementById('edit-sheet-body');
   if(body)body.innerHTML=buildEditFormHTML(s);
   document.getElementById('edit-scrim').className='scrim open';
   document.getElementById('edit-sheet').className='sheet open';
   document.getElementById('content').style.overflow='hidden';
   setTimeout(function(){refreshEditBK(id);},50);
+}
+function onEditBHToggle(id){
+  var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
+  if(!s)return;
+  var bhEl=document.getElementById('ed-bh-'+id);
+  if(bhEl&&bhEl.checked){s._editBHDay1=true;s._editBHDay2=false;}
+  else{s._editBHDay1=false;s._editBHDay2=false;}
+  refreshEditBK(id);
+}
+function onEditBHDay(id,n){
+  var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
+  if(!s)return;
+  if(n===1)s._editBHDay1=!s._editBHDay1;else s._editBHDay2=!s._editBHDay2;
+  if(!s._editBHDay1&&!s._editBHDay2){var bhEl=document.getElementById('ed-bh-'+id);if(bhEl)bhEl.checked=false;}
+  refreshEditBK(id);
 }
 function cancelEdit(){
   editingShiftId=null;
@@ -1032,7 +1078,25 @@ function refreshEditBK(id){
   var bh=document.getElementById('ed-bh-'+id)?document.getElementById('ed-bh-'+id).checked:false;
   var ende=document.getElementById('ed-end1-'+id)?document.getElementById('ed-end1-'+id).checked:false;
   if(!date||!start||!end){bkEl.innerHTML='';return;}
-  var split=splitShift(date,start,end,bh,breakMin,breakStart,ende);
+  var s=null;for(var si=0;si<shifts.length;si++)if(shifts[si].id===id){s=shifts[si];break;}
+  var spans=isOvernight(start,end)||ende;
+  var bhDays=document.getElementById('ed-bh-days-'+id);
+  if(bhDays){
+    var showDays=bh&&spans;
+    bhDays.style.display=showDays?'block':'none';
+    if(showDays&&s){
+      var bhClr=getBHColor(),nextD=nextDayStr(date);
+      var p1=document.getElementById('ed-bh-d1-'+id),p2=document.getElementById('ed-bh-d2-'+id);
+      if(p1){p1.textContent=fmtPillDate(date);p1.className='day-pill'+(s._editBHDay1?' on':'');p1.style.cssText=s._editBHDay1?'background:'+bhClr+'18;border-color:'+bhClr+';color:'+bhClr:'';}
+      if(p2){p2.textContent=fmtPillDate(nextD);p2.className='day-pill'+(s._editBHDay2?' on':'');p2.style.cssText=s._editBHDay2?'background:'+bhClr+'18;border-color:'+bhClr+';color:'+bhClr:'';}
+    }
+  }
+  var bhDates=[];
+  if(bh){
+    if(!spans){bhDates.push(date);}
+    else if(s){if(s._editBHDay1)bhDates.push(date);if(s._editBHDay2)bhDates.push(nextDayStr(date));}
+  }
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var html='<div style="padding:8px 0;border-top:1px solid var(--line-soft)">';
   for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';}
@@ -1048,12 +1112,19 @@ function saveEdit(id){
   var bh=document.getElementById('ed-bh-'+id)?document.getElementById('ed-bh-'+id).checked:false;
   var ende=document.getElementById('ed-end1-'+id)?document.getElementById('ed-end1-'+id).checked:false;
   if(!date||!start||!end)return;
-  var split=splitShift(date,start,end,bh,breakMin,breakStart,ende);
-  var totalH=shiftTotalHours(date,start,end,breakMin,ende),totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
-  var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
   var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
   if(!s)return;
-  Object.assign(s,{date:date,start:start,end:end,bh:bh,endsNextDay:ende,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands))});
+  var spans=isOvernight(start,end)||ende;
+  var bhDates=[];
+  if(bh){
+    if(!spans){bhDates.push(date);}
+    else{if(s._editBHDay1)bhDates.push(date);if(s._editBHDay2)bhDates.push(nextDayStr(date));}
+  }
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende);
+  var totalH=shiftTotalHours(date,start,end,breakMin,ende),totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
+  var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
+  Object.assign(s,{date:date,start:start,end:end,bh:bhDates.length>0,bhDates:bhDates,endsNextDay:ende,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands))});
+  delete s._editBHDay1;delete s._editBHDay2;
   recomputeDateSplit(s);
   persist();toast('Shift updated');cancelEdit();renderSummary();
 }
@@ -1329,7 +1400,17 @@ function openDayModal(ds){
 }
 (function(){var s=document.getElementById('day-sheet'),sy=0;if(!s)return;s.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;},{passive:true});s.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-sy>60)closeDayModal();},{passive:true});})();
 loadData();
-// Backfill dateSplit on overnight shifts saved before recomputeDateSplit existed
+// Migrate legacy bh/bhNext to bhDates; backfill dateSplit
+shifts.forEach(function(s){
+  if(!s.bhDates){
+    s.bhDates=[];
+    if(s.bh){
+      s.bhDates.push(s.date);
+      if(s.bhNext&&(isOvernight(s.start,s.end)||s.endsNextDay))s.bhDates.push(nextDayStr(s.date));
+    }
+  }
+  s.bh=s.bhDates.length>0;
+});
 shifts.forEach(recomputeDateSplit);
 var pooEl=document.getElementById('poo-egg');if(pooEl&&pooOn)pooEl.className='poo-egg on';
 setLogDate(new Date().toISOString().split('T')[0]);
