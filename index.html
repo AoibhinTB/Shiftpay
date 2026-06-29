@@ -32,7 +32,7 @@ html,body{height:100%;background:#ece5d3;font-family:'Geist',system-ui,sans-seri
 #menu-btn{background:none;border:none;cursor:pointer;padding:6px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 #menu-btn span{display:block;width:20px;height:2px;background:currentColor;border-radius:1px}
 #content{padding-top:calc(env(safe-area-inset-top,0px) + 62px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 90px);min-height:100dvh;min-height:100vh}
-#tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:grid;grid-template-columns:repeat(3,1fr);background:var(--cream);border-top:1px solid var(--line);padding-bottom:max(0px,env(safe-area-inset-bottom,0px));z-index:50}
+#tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:grid;grid-template-columns:repeat(4,1fr);background:var(--cream);border-top:1px solid var(--line);padding-bottom:max(0px,env(safe-area-inset-bottom,0px));z-index:50}
 .tab-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 0 6px;background:none;border:none;cursor:pointer;font-family:'Geist',sans-serif;font-size:10.5px;font-weight:500;color:var(--muted-2);transition:color .15s}
 .tab-btn.active{color:var(--blue)}
 .tab-btn svg{width:22px;height:22px;overflow:visible}
@@ -295,6 +295,8 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 
     <div id="pg-summary" class="page"><div id="summary-body"></div></div>
 
+    <div id="pg-totals" class="page"><div id="totals-body"></div></div>
+
     <div id="pg-setup" class="page">
       <div class="sect-hdr" style="padding-top:16px"><h2>Pay bands</h2><button class="btn-ghost" onclick="addBand()">+ Add</button></div>
       <div class="pad-x"><div id="band-list"></div></div>
@@ -327,14 +329,18 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
   <div id="tabbar">
     <button class="tab-btn active" id="tb-log" onclick="go('log',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="9" y1="3" x2="9" y2="7"/><line x1="15" y1="3" x2="15" y2="7"/><line x1="12" y1="14" x2="12" y2="17"/><line x1="10.5" y1="15.5" x2="13.5" y2="15.5"/></svg>
-      Log shift
+      Log
     </button>
     <button class="tab-btn" id="tb-summary" onclick="go('summary',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+      Payslips
+    </button>
+    <button class="tab-btn" id="tb-totals" onclick="go('totals',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>
       Summary
     </button>
     <button class="tab-btn" id="tb-setup" onclick="go('setup',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(12 12) scale(0.86) translate(-12 -12)"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.46.1.81.39 1 .77z"/></g></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/></svg>
       Setup
     </button>
   </div>
@@ -402,7 +408,7 @@ var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
 var settings={periodType:'weekly',nextPayslipDate:''};
 var pooOn=false,onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null;
-var openPeriodKeys={},summaryView='list',calMonthOffset=0;
+var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month';
 var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
 
 function persist(){try{localStorage.setItem('shiftpay.bands',JSON.stringify(bands));localStorage.setItem('shiftpay.shifts',JSON.stringify(shifts));localStorage.setItem('shiftpay.templates',JSON.stringify(shiftTemplates));localStorage.setItem('shiftpay.manuals',JSON.stringify(manualEntries));localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}catch(e){}}
@@ -898,6 +904,60 @@ function renderSummary(){
   el.innerHTML=html;
 }
 function setSummaryView(v){summaryView=v;renderSummary();}
+function setTotalsRange(r){totalsRange=r;renderTotals();}
+function renderTotals(){
+  var el=document.getElementById('totals-body');if(!el)return;
+  if(!shifts.length&&!manualEntries.length){
+    el.innerHTML='<div class="empty-state"><div class="empty-title">Nothing to total yet</div><div class="empty-sub">Log a shift and totals will show up here.</div></div>';
+    return;
+  }
+  var now=new Date(),rangeStart,rangeEnd,rangeLabel;
+  if(totalsRange==='month'){rangeStart=new Date(now.getFullYear(),now.getMonth(),1);rangeEnd=new Date(now.getFullYear(),now.getMonth()+1,0,23,59,59);rangeLabel=now.toLocaleDateString('en-IE',{month:'long',year:'numeric'});}
+  else if(totalsRange==='year'){rangeStart=new Date(now.getFullYear(),0,1);rangeEnd=new Date(now.getFullYear(),11,31,23,59,59);rangeLabel=String(now.getFullYear());}
+  else{rangeStart=new Date(2000,0,1);rangeEnd=new Date(3000,0,1);rangeLabel='All time';}
+  function inRange(ds){var d=new Date(ds+'T12:00');return d>=rangeStart&&d<=rangeEnd;}
+  var totalAmt=0,totalHrs=0,shiftCount=0,bandAgg={},countedShifts={};
+  shifts.forEach(function(s){
+    if(s.dateSplit&&Object.keys(s.dateSplit).length){
+      for(var ds in s.dateSplit){
+        if(!inRange(ds))continue;
+        if(!countedShifts[s.id]){countedShifts[s.id]=true;shiftCount++;}
+        s.dateSplit[ds].forEach(function(b){
+          var live=getBand(b.id);var name=live?live.name:b.name;var color=live?live.color:b.color;
+          totalHrs+=b.hours;totalAmt+=b.amount;
+          if(!bandAgg[b.id])bandAgg[b.id]={name:name,color:color,hours:0,amount:0};
+          bandAgg[b.id].hours+=b.hours;bandAgg[b.id].amount+=b.amount;
+        });
+      }
+    } else if(inRange(s.date)){
+      shiftCount++;totalHrs+=s.th||0;totalAmt+=s.tp||0;
+      var split=s.split||[];
+      if(!split.length&&s.hm){for(var bid in s.hm){var bnd=getBand(bid);if(bnd)split.push({id:bid,name:bnd.name,color:bnd.color,hours:s.hm[bid]||0,amount:s.pm[bid]||0});}}
+      split.forEach(function(b){
+        var live=getBand(b.id);var name=live?live.name:b.name;var color=live?live.color:b.color;
+        if(!bandAgg[b.id])bandAgg[b.id]={name:name,color:color,hours:0,amount:0};
+        bandAgg[b.id].hours+=b.hours;bandAgg[b.id].amount+=b.amount;
+      });
+    }
+  });
+  var manualAmt=0;manualEntries.forEach(function(m){if(inRange(m.date)){manualAmt+=m.amount||0;totalAmt+=m.amount||0;}});
+  var bandArr=[];for(var k in bandAgg)bandArr.push(bandAgg[k]);bandArr.sort(function(a,b){return b.amount-a.amount;});
+  var fp=totalAmt.toFixed(2).split('.'),fpInt=fp[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  var html='<div class="pad-x" style="margin-top:14px;margin-bottom:12px"><div class="seg"><button class="'+(totalsRange==='month'?'on':'')+'" onclick="setTotalsRange(\'month\')">Month</button><button class="'+(totalsRange==='year'?'on':'')+'" onclick="setTotalsRange(\'year\')">Year</button><button class="'+(totalsRange==='all'?'on':'')+'" onclick="setTotalsRange(\'all\')">All time</button></div></div>';
+  html+='<div class="hero"><div class="hero-lbl">Total gross · '+rangeLabel+'</div>';
+  html+='<div class="hero-num">€'+fpInt+'<span class="cent">.'+(fp[1]||'00')+'</span></div>';
+  html+='<div class="hero-tiny">'+totalHrs.toFixed(1)+'h · '+shiftCount+' shift'+(shiftCount!==1?'s':'')+(manualAmt>0?(' · '+fmtEUR(manualAmt)+' manual'):'')+'</div></div>';
+  if(bandArr.length){
+    var totalForBar=bandArr.reduce(function(a,b){return a+b.amount;},0)||1;
+    html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:12px">Breakdown by band</div><div class="bar-track">';
+    for(var i=0;i<bandArr.length;i++)html+='<div class="bar-seg" style="background:'+bandArr[i].color+';width:'+(bandArr[i].amount/totalForBar*100)+'%"></div>';
+    html+='</div>';
+    for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span></span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
+    html+='</div></div>';
+  }
+  html+='<div style="height:20px"></div>';
+  el.innerHTML=html;
+}
 function togglePeriod(key){openPeriodKeys[key]=!openPeriodKeys[key];renderSummary();}
 
 function buildListHTML(){
@@ -1292,6 +1352,7 @@ function go(pg,btn){
   if(btn)btn.classList.add('active');
   if(pg==='log'){var d=document.getElementById('l-date');if(d&&!d.value)d.value=new Date().toISOString().split('T')[0];renderTplChips();}
   if(pg==='summary')renderSummary();
+  if(pg==='totals')renderTotals();
   if(pg==='setup'){renderBands();renderTemplates();var ps=document.getElementById('period-select');if(ps)ps.value=settings.periodType;var pd=document.getElementById('payslip-date-input');if(pd)pd.value=settings.nextPayslipDate||'';}
 }
 
