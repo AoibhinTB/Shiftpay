@@ -408,7 +408,7 @@ var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
 var settings={periodType:'weekly',nextPayslipDate:''};
 var pooOn=false,onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null;
-var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month';
+var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',customStart='',customEnd='';
 var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
 
 function persist(){try{localStorage.setItem('shiftpay.bands',JSON.stringify(bands));localStorage.setItem('shiftpay.shifts',JSON.stringify(shifts));localStorage.setItem('shiftpay.templates',JSON.stringify(shiftTemplates));localStorage.setItem('shiftpay.manuals',JSON.stringify(manualEntries));localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}catch(e){}}
@@ -899,12 +899,15 @@ function renderSummary(){
     html+='<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;margin-top:2px"><span style="font-size:13px;font-weight:700">Total</span><span style="font-family:Fraunces,serif;font-size:22px;font-weight:600;color:var(--blue);letter-spacing:-0.01em">'+fmtEUR(bandArr.reduce(function(a,b){return a+b.amount;},0))+'</span></div>';
     html+='</div></div>';
   }
-  html+='<div class="sect-hdr"><h2>Shift history</h2><div class="seg"><button class="'+(summaryView==='list'?'on':'')+'" onclick="setSummaryView(\'list\')">List</button><button class="'+(summaryView==='calendar'?'on':'')+'" onclick="setSummaryView(\'calendar\')">Calendar</button></div></div>';
-  html+=(summaryView==='calendar')?buildCalendarHTML():buildListHTML();
+  html+='<div class="sect-hdr"><h2>Shift history</h2></div>';
+  html+=buildListHTML();
   el.innerHTML=html;
 }
 function setSummaryView(v){summaryView=v;renderSummary();}
-function setTotalsRange(r){totalsRange=r;renderTotals();}
+function setTotalsRange(r){totalsRange=r;if(r==='custom'&&!customStart){var n=new Date();customStart=dateStr(new Date(n.getFullYear(),n.getMonth(),1));customEnd=dateStr(n);}renderTotals();}
+function setCustomStart(v){customStart=v;renderTotals();}
+function setCustomEnd(v){customEnd=v;renderTotals();}
+function fmtRangeDate(ds){var d=new Date(ds+'T12:00');return d.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'});}
 function renderTotals(){
   var el=document.getElementById('totals-body');if(!el)return;
   if(!shifts.length&&!manualEntries.length){
@@ -914,6 +917,11 @@ function renderTotals(){
   var now=new Date(),rangeStart,rangeEnd,rangeLabel;
   if(totalsRange==='month'){rangeStart=new Date(now.getFullYear(),now.getMonth(),1);rangeEnd=new Date(now.getFullYear(),now.getMonth()+1,0,23,59,59);rangeLabel=now.toLocaleDateString('en-IE',{month:'long',year:'numeric'});}
   else if(totalsRange==='year'){rangeStart=new Date(now.getFullYear(),0,1);rangeEnd=new Date(now.getFullYear(),11,31,23,59,59);rangeLabel=String(now.getFullYear());}
+  else if(totalsRange==='custom'){
+    rangeStart=customStart?new Date(customStart+'T00:00:00'):new Date(2000,0,1);
+    rangeEnd=customEnd?new Date(customEnd+'T23:59:59'):new Date(3000,0,1);
+    rangeLabel=(customStart&&customEnd)?(fmtRangeDate(customStart)+' – '+fmtRangeDate(customEnd)):'Pick dates';
+  }
   else{rangeStart=new Date(2000,0,1);rangeEnd=new Date(3000,0,1);rangeLabel='All time';}
   function inRange(ds){var d=new Date(ds+'T12:00');return d>=rangeStart&&d<=rangeEnd;}
   var totalAmt=0,totalHrs=0,shiftCount=0,bandAgg={},countedShifts={};
@@ -943,7 +951,14 @@ function renderTotals(){
   var manualAmt=0;manualEntries.forEach(function(m){if(inRange(m.date)){manualAmt+=m.amount||0;totalAmt+=m.amount||0;}});
   var bandArr=[];for(var k in bandAgg)bandArr.push(bandAgg[k]);bandArr.sort(function(a,b){return b.amount-a.amount;});
   var fp=totalAmt.toFixed(2).split('.'),fpInt=fp[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
-  var html='<div class="pad-x" style="margin-top:14px;margin-bottom:12px"><div class="seg"><button class="'+(totalsRange==='month'?'on':'')+'" onclick="setTotalsRange(\'month\')">Month</button><button class="'+(totalsRange==='year'?'on':'')+'" onclick="setTotalsRange(\'year\')">Year</button><button class="'+(totalsRange==='all'?'on':'')+'" onclick="setTotalsRange(\'all\')">All time</button></div></div>';
+  var html='<div class="pad-x" style="margin-top:14px;margin-bottom:12px"><div class="seg"><button class="'+(totalsRange==='month'?'on':'')+'" onclick="setTotalsRange(\'month\')">Month</button><button class="'+(totalsRange==='year'?'on':'')+'" onclick="setTotalsRange(\'year\')">Year</button><button class="'+(totalsRange==='all'?'on':'')+'" onclick="setTotalsRange(\'all\')">All time</button><button class="'+(totalsRange==='custom'?'on':'')+'" onclick="setTotalsRange(\'custom\')">Custom</button></div>';
+  if(totalsRange==='custom'){
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">';
+    html+='<div class="field"><label class="lbl">From</label><input type="date" id="totals-from" value="'+customStart+'" onchange="setCustomStart(this.value)"></div>';
+    html+='<div class="field"><label class="lbl">To</label><input type="date" id="totals-to" value="'+customEnd+'" onchange="setCustomEnd(this.value)"></div>';
+    html+='</div>';
+  }
+  html+='</div>';
   html+='<div class="hero"><div class="hero-lbl">Total gross · '+rangeLabel+'</div>';
   html+='<div class="hero-num">€'+fpInt+'<span class="cent">.'+(fp[1]||'00')+'</span></div>';
   html+='<div class="hero-tiny">'+totalHrs.toFixed(1)+'h · '+shiftCount+' shift'+(shiftCount!==1?'s':'')+(manualAmt>0?(' · '+fmtEUR(manualAmt)+' manual'):'')+'</div></div>';
@@ -955,6 +970,8 @@ function renderTotals(){
     for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span></span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
     html+='</div></div>';
   }
+  html+='<div class="sect-hdr" style="margin-top:18px"><h2>Calendar</h2></div>';
+  html+=buildCalendarHTML();
   html+='<div style="height:20px"></div>';
   el.innerHTML=html;
 }
