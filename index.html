@@ -408,7 +408,7 @@ var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
 var settings={periodType:'weekly',nextPayslipDate:''};
 var pooOn=false,onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null;
-var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,customStart='',customEnd='';
+var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='';
 var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
 
 function persist(){try{localStorage.setItem('shiftpay.bands',JSON.stringify(bands));localStorage.setItem('shiftpay.shifts',JSON.stringify(shifts));localStorage.setItem('shiftpay.templates',JSON.stringify(shiftTemplates));localStorage.setItem('shiftpay.manuals',JSON.stringify(manualEntries));localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}catch(e){}}
@@ -904,16 +904,18 @@ function renderSummary(){
   el.innerHTML=html;
 }
 function setSummaryView(v){summaryView=v;renderSummary();}
-function setTotalsRange(r){if(r!=='month')totalsMonthOffset=0;totalsRange=r;if(r==='custom'&&!customStart){var n=new Date();customStart=dateStr(new Date(n.getFullYear(),n.getMonth(),1));customEnd=dateStr(n);}renderTotals();}
+function setTotalsRange(r){if(r!=='month')totalsMonthOffset=0;if(r!=='year')totalsYearOffset=0;totalsRange=r;if(r==='custom'&&!customStart){var n=new Date();customStart=dateStr(new Date(n.getFullYear(),n.getMonth(),1));customEnd=dateStr(n);}renderTotals();}
 function initTotalsSwipe(){
-  var el=document.getElementById('totals-hero');if(!el||totalsRange!=='month')return;
+  var el=document.getElementById('totals-hero');if(!el||(totalsRange!=='month'&&totalsRange!=='year'))return;
   var sx=0,sy=0,dragging=false;
   el.addEventListener('touchstart',function(e){sx=e.touches[0].clientX;sy=e.touches[0].clientY;dragging=true;},{passive:true});
   el.addEventListener('touchend',function(e){
     if(!dragging)return;dragging=false;
     var dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
     if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5){
-      totalsMonthOffset+=(dx<0?1:-1);renderTotals();
+      var step=(dx<0?1:-1);
+      if(totalsRange==='month')totalsMonthOffset+=step;else totalsYearOffset+=step;
+      renderTotals();
     }
   },{passive:true});
 }
@@ -928,7 +930,7 @@ function renderTotals(){
   }
   var now=new Date(),rangeStart,rangeEnd,rangeLabel;
   if(totalsRange==='month'){var anchor=new Date(now.getFullYear(),now.getMonth()+totalsMonthOffset,1);rangeStart=anchor;rangeEnd=new Date(anchor.getFullYear(),anchor.getMonth()+1,0,23,59,59);rangeLabel=anchor.toLocaleDateString('en-IE',{month:'long',year:'numeric'});}
-  else if(totalsRange==='year'){rangeStart=new Date(now.getFullYear(),0,1);rangeEnd=new Date(now.getFullYear(),11,31,23,59,59);rangeLabel=String(now.getFullYear());}
+  else if(totalsRange==='year'){var yr=now.getFullYear()+totalsYearOffset;rangeStart=new Date(yr,0,1);rangeEnd=new Date(yr,11,31,23,59,59);rangeLabel=String(yr);}
   else if(totalsRange==='custom'){
     rangeStart=customStart?new Date(customStart+'T00:00:00'):new Date(2000,0,1);
     rangeEnd=customEnd?new Date(customEnd+'T23:59:59'):new Date(3000,0,1);
@@ -971,7 +973,7 @@ function renderTotals(){
     html+='</div>';
   }
   html+='</div>';
-  html+='<div class="hero" id="totals-hero" style="touch-action:pan-y"><div class="hero-lbl">Total gross · '+rangeLabel+(totalsRange==='month'?' <span style="opacity:.5;font-weight:400">· swipe ‹ ›</span>':'')+'</div>';
+  html+='<div class="hero" id="totals-hero" style="touch-action:pan-y"><div class="hero-lbl">Total gross · '+rangeLabel+((totalsRange==='month'||totalsRange==='year')?' <span style="opacity:.5;font-weight:400">· swipe ‹ ›</span>':'')+'</div>';
   html+='<div class="hero-num">€'+fpInt+'<span class="cent">.'+(fp[1]||'00')+'</span></div>';
   html+='<div class="hero-tiny">'+totalHrs.toFixed(1)+'h · '+shiftCount+' shift'+(shiftCount!==1?'s':'')+(manualAmt>0?(' · '+fmtEUR(manualAmt)+' manual'):'')+'</div></div>';
   if(bandArr.length){
