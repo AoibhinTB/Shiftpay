@@ -1232,7 +1232,7 @@ function buildCalendarHTML(){
   var firstDow=(new Date(year,month,1).getDay()+6)%7,daysInMonth=new Date(year,month+1,0).getDate();
   var byDate={};
   shifts.forEach(function(s){var d=new Date(s.date+'T12:00');if(d.getFullYear()===year&&d.getMonth()===month){var k=d.getDate();if(!byDate[k])byDate[k]=[];byDate[k].push(s);}});
-  var html='<div><div class="cal-nav"><button class="cal-nav-btn" onclick="calMonthOffset--;renderSummary()">\u2039</button><div class="cal-nav-lbl">'+monthName+'</div><button class="cal-nav-btn" onclick="calMonthOffset++;renderSummary()">\u203a</button></div>';
+  var html='<div><div class="cal-nav"><button class="cal-nav-btn" onclick="calMonthOffset--;renderTotals()">\u2039</button><div class="cal-nav-lbl">'+monthName+'</div><button class="cal-nav-btn" onclick="calMonthOffset++;renderTotals()">\u203a</button></div>';
   html+='<div class="pad-x"><div class="card" style="padding:14px">';
   html+='<div class="cal-grid" style="margin-bottom:6px">';
   ['M','T','W','T','F','S','S'].forEach(function(d){html+='<div class="cal-dh">'+d+'</div>';});
