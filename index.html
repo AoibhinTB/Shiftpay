@@ -1507,6 +1507,7 @@ shifts.forEach(function(s){
 shifts.forEach(recomputeDateSplit);
 var pooEl=document.getElementById('poo-egg');if(pooEl&&pooOn)pooEl.className='poo-egg on';
 setLogDate(new Date().toISOString().split('T')[0]);
+renderTplChips();
 var psEl=document.getElementById('period-select');if(psEl)psEl.value=settings.periodType;
 var pdEl=document.getElementById('payslip-date-input');if(pdEl)pdEl.value=settings.nextPayslipDate||'';
 injectPWA();
