@@ -351,7 +351,8 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 <div class="sheet" id="menu-sheet">
   <div class="sheet-grab" onclick="closeMenu()" style="cursor:pointer;padding:8px 0;margin-top:4px"></div>
   <h3>Your data</h3>
-  <button class="sheet-item" onclick="exportBackup();closeMenu()"><div class="si-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div><div><div>Back up my data</div><div class="si-sub">Download a full snapshot (.json)</div></div></button>
+  <div class="tiny" style="padding:0 24px 12px">Your data is stored on this device only. Back up before you delete ShiftPay or switch phones &mdash; otherwise your data will be lost.</div>
+  <button class="sheet-item" onclick="exportBackup();closeMenu()"><div class="si-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div><div><div>Back up my data</div><div class="si-sub">Save a full snapshot to Files, iCloud, or email</div></div></button>
   <button class="sheet-item" onclick="exportSpreadsheet();closeMenu()"><div class="si-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg></div><div><div>Download as spreadsheet</div><div class="si-sub">Opens in Excel or Numbers (.csv)</div></div></button>
   <button class="sheet-item" onclick="importBackup();closeMenu()"><div class="si-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div>Restore from backup</div><div class="si-sub">Replace everything from a .json file</div></div></button>
   <button class="sheet-item" onclick="showInstallModal();closeMenu()"><div class="si-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div><div><div>Save to home screen</div><div class="si-sub">Install as an app on your phone</div></div></button>
@@ -386,7 +387,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
   <div style="height:8px"></div>
 </div>
 
-<input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImport(event)">
+<input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="handleImport(event)">
 <div class="scrim" id="day-scrim" onclick="closeDayModal()"></div>
 <div class="sheet" id="day-sheet">
   <div class="sheet-grab"></div>
@@ -1389,10 +1390,55 @@ function go(pg,btn){
   if(pg==='setup'){renderBands();renderTemplates();var ps=document.getElementById('period-select');if(ps)ps.value=settings.periodType;var pd=document.getElementById('payslip-date-input');if(pd)pd.value=settings.nextPayslipDate||'';}
 }
 
-function exportBackup(){var data={version:2,exportedAt:new Date().toISOString(),bands:bands,shifts:shifts,manualEntries:manualEntries,shiftTemplates:shiftTemplates,settings:settings};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shiftpay-backup-'+new Date().toISOString().split('T')[0]+'.json';a.click();toast('Backup downloaded');}
+function exportBackup(){
+  var data={version:2,exportedAt:new Date().toISOString(),bands:bands,shifts:shifts,manualEntries:manualEntries,shiftTemplates:shiftTemplates,settings:settings};
+  var json=JSON.stringify(data,null,2);
+  var filename='shiftpay-backup-'+new Date().toISOString().split('T')[0]+'.json';
+  var file=null;
+  try{file=new File([json],filename,{type:'application/json'});}catch(e){}
+  if(file&&navigator.canShare&&navigator.canShare({files:[file]})){
+    navigator.share({files:[file],title:'ShiftPay backup'}).then(function(){toast('Backup saved');}).catch(function(err){if(err&&err.name==='AbortError')return;downloadBackupBlob(json,filename);});
+    return;
+  }
+  downloadBackupBlob(json,filename);
+}
+function downloadBackupBlob(json,filename){var blob=new Blob([json],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;a.click();toast('Backup downloaded');}
 function exportSpreadsheet(){var rows=[['Date','Day','Start','End','Total Hours','Break (min)','Break Start','Band','Band Hours','Rate (\u20ac/hr)','Pay (\u20ac)','Bank Holiday']];shifts.forEach(function(s){var d=new Date(s.date+'T12:00'),dayName=d.toLocaleDateString('en-IE',{weekday:'long'}),ds2=d.toLocaleDateString('en-IE',{day:'2-digit',month:'2-digit',year:'numeric'}),bh=s.bh?'Yes':'No',split=s.split||[],first=true;if(!split.length&&s.hm){for(var bid in s.hm){var bnd=getBand(bid);if(bnd)split.push({id:bid,name:bnd.name,hours:s.hm[bid]||0,amount:s.pm[bid]||0,rate:bnd.rate||0});}}if(!split.length){rows.push([ds2,dayName,s.start,s.end,(s.th||0).toFixed(2),s.breakMin||0,s.breakStart||'','','','',(s.tp||0).toFixed(2),bh]);return;}split.forEach(function(b){rows.push([first?ds2:'',first?dayName:'',first?s.start:'',first?s.end:'',first?(s.th||0).toFixed(2):'',first?s.breakMin||0:'',first?s.breakStart||'':'',b.name,b.hours.toFixed(2),(b.rate||0).toFixed(2),b.amount.toFixed(2),first?bh:'']);first=false;});});var csv=rows.map(function(r){return r.map(function(c){return'"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');var blob=new Blob([csv],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shiftpay-shifts-'+new Date().toISOString().split('T')[0]+'.csv';a.click();toast('Spreadsheet downloaded');}
 function importBackup(){document.getElementById('import-file').click();}
-function handleImport(e){var file=e.target.files[0];if(!file)return;var reader=new FileReader();reader.onload=function(ev){try{var data=JSON.parse(ev.target.result);if(!data.bands&&!data.shifts){toast('File not recognised');return;}if(data.bands)bands=data.bands;if(data.shifts)shifts=data.shifts;if(data.manualEntries)manualEntries=data.manualEntries;if(data.shiftTemplates)shiftTemplates=data.shiftTemplates;if(data.settings){settings.periodType=data.settings.periodType||settings.periodType;settings.nextPayslipDate=data.settings.nextPayslipDate||'';}ensureDefaultBands();persist();hasInitedPeriod=false;renderBands();renderTemplates();renderTplChips();renderSummary();var ps=document.getElementById('period-select');if(ps)ps.value=settings.periodType;var pd=document.getElementById('payslip-date-input');if(pd)pd.value=settings.nextPayslipDate||'';toast('Data restored');}catch(err){toast('Could not read file');}};reader.readAsText(file);e.target.value='';}
+function isValidBackup(data){
+  if(!data||typeof data!=='object')return false;
+  var hasBands=Array.isArray(data.bands);
+  var hasShifts=Array.isArray(data.shifts);
+  var hasTemplates=Array.isArray(data.shiftTemplates);
+  if(!hasBands&&!hasShifts&&!hasTemplates)return false;
+  if(hasBands)for(var i=0;i<data.bands.length;i++){var b=data.bands[i];if(!b||typeof b!=='object'||!('id' in b)||!('name' in b))return false;}
+  if(hasShifts)for(var j=0;j<data.shifts.length;j++){var s=data.shifts[j];if(!s||typeof s!=='object'||!s.date)return false;}
+  if(hasTemplates)for(var k=0;k<data.shiftTemplates.length;k++){var t=data.shiftTemplates[k];if(!t||typeof t!=='object'||!('id' in t))return false;}
+  return true;
+}
+function handleImport(e){
+  var file=e.target.files[0];if(!file){e.target.value='';return;}
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    var data;
+    try{data=JSON.parse(ev.target.result);}catch(err){toast('Not a valid JSON file');e.target.value='';return;}
+    if(!isValidBackup(data)){toast("This doesn't look like a ShiftPay backup");e.target.value='';return;}
+    if(!window.confirm('Restoring will replace all your current shifts, bands, templates, and settings. Continue?')){e.target.value='';return;}
+    if(data.bands)bands=data.bands;
+    if(data.shifts)shifts=data.shifts;
+    if(data.manualEntries)manualEntries=data.manualEntries;
+    if(data.shiftTemplates)shiftTemplates=data.shiftTemplates;
+    if(data.settings){settings.periodType=data.settings.periodType||settings.periodType;settings.nextPayslipDate=data.settings.nextPayslipDate||'';}
+    ensureDefaultBands();persist();hasInitedPeriod=false;
+    renderBands();renderTemplates();renderTplChips();renderSummary();
+    var ps=document.getElementById('period-select');if(ps)ps.value=settings.periodType;
+    var pd=document.getElementById('payslip-date-input');if(pd)pd.value=settings.nextPayslipDate||'';
+    toast('Data restored');
+    e.target.value='';
+  };
+  reader.onerror=function(){toast('Could not read file');e.target.value='';};
+  reader.readAsText(file);
+}
 
 var onbStep=0;
 var onbSteps=[
@@ -1510,6 +1556,7 @@ setLogDate(new Date().toISOString().split('T')[0]);
 renderTplChips();
 var psEl=document.getElementById('period-select');if(psEl)psEl.value=settings.periodType;
 var pdEl=document.getElementById('payslip-date-input');if(pdEl)pdEl.value=settings.nextPayslipDate||'';
+if(navigator.storage&&navigator.storage.persist){try{navigator.storage.persist().catch(function(){});}catch(e){}}
 injectPWA();
 if(!onboarded){document.getElementById('onboarding').classList.remove('hidden');renderOnboarding();}
 initSheetSwipe('menu-sheet',closeMenu);
