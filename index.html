@@ -319,9 +319,13 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
         </div>
         <div class="save-ok" id="save-ok">Saved</div>
       </div>
-      <div class="sect-hdr"><h2>About</h2></div>
+      <div class="sect-hdr"><h2>Privacy</h2></div>
       <div class="pad-x">
-        <div class="card"><div class="tiny" style="line-height:1.6">All shift data stays on this device only. Bands with a higher rate take priority where they overlap. Gross pay only &mdash; tax and deductions not included.</div></div>
+        <div class="card"><div class="tiny" style="line-height:1.6">Everything you enter stays on your device. There are no accounts, no external database, and nothing is sent anywhere or shared with anyone. No tracking.</div></div>
+      </div>
+      <div class="sect-hdr"><h2>How pay is calculated</h2></div>
+      <div class="pad-x">
+        <div class="card"><div class="tiny" style="line-height:1.6">Bands with a higher rate take priority where they overlap. Shows gross pay only. Tax, USC, PRSI and pension are not deducted.</div></div>
       </div>
       <div style="height:20px"></div>
     </div>
@@ -366,7 +370,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
   <div class="sheet-grab"></div>
   <div class="success-sheet">
     <div class="success-check"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f5f1e8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
-    <div class="lbl" style="text-align:center;margin-bottom:8px">Shift saved &middot; adds to payslip</div>
+    <div class="lbl" style="text-align:center;margin-bottom:8px">Shift saved &middot; gross adds to payslip</div>
     <div id="success-amt" class="bk-amt" style="text-align:center;margin-bottom:4px"></div>
     <div id="success-payslip" class="tiny" style="text-align:center;margin-bottom:22px"></div>
     <button class="btn-primary" onclick="logAnother()">Log another shift</button>
@@ -873,10 +877,11 @@ function renderSummary(){
   });
   var payslipD=getNextPayslipDate(),payslipStr=fmtPayslipDate(payslipD);
   var eps=nextPay.toFixed(2).split('.'),efmt=eps[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
-  var html='<div class="hero"><div class="hero-lbl">Next Payslip (Est. Gross)</div>';
+  var html='<div class="hero"><div class="hero-lbl">Est. Gross &middot; Next Payslip</div>';
   html+='<div class="hero-num">\u20ac'+efmt+'<span class="cent">.'+(eps[1]||'00')+'</span></div>';
   html+='<div class="hero-tiny">Pay earned this '+payPeriodLabel()+', plus deferred amounts from previous '+payPeriodLabel()+'s</div>';
   if(settings.nextPayslipDate)html+='<div class="hero-tiny" style="margin-top:4px">Period ends <span class="hero-pill">'+payslipStr+'</span></div>';
+  html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">Calculates your gross pay before tax, USC, PRSI and pension. Verify against your payslip.</div>';
   html+='</div>';
   // Breakdown for current period
       var byBand={};
@@ -1442,9 +1447,9 @@ function handleImport(e){
 
 var onbStep=0;
 var onbSteps=[
-  {artType:'mark',title:'Welcome to ShiftPay',body:'Track your gross pay across complex shift patterns. Your data stays on your device \u2014 no accounts, no cloud.',cta:'Get started'},
-  {artType:'bands',title:'Define your pay bands',body:'Standard, night, weekends, bank holidays \u2014 each with its own rate. Add your actual rates from your payslip in Setup.',cta:'Next'},
-  {artType:'log',title:'Log shifts in seconds',body:'Pick a date, set start and end, optionally a break \u2014 we split hours across your bands automatically and show the gross before you save.',cta:'Start tracking'}
+  {artType:'mark',title:'Welcome to ShiftPay',body:'Track your gross pay across complex shift patterns. Your data stays on your device. No accounts, no cloud.',cta:'Get started'},
+  {artType:'bands',title:'Define your pay bands',body:'Standard, night, weekends, bank holidays: each with its own rate. Add your actual rates from your payslip in Setup.',cta:'Next'},
+  {artType:'log',title:'Log shifts in seconds',body:'Pick a date, set start and end, optionally a break. We split hours across your bands automatically and show the gross before you save.<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.5">Calculates your gross pay before tax, USC, PRSI and pension. Verify against your payslip.</div>',cta:'Start tracking'}
 ];
 function renderOnboarding(){
   var step=onbSteps[onbStep];
