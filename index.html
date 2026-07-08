@@ -219,10 +219,10 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
   </div>
 
   <div id="content">
-    <div id="pwa-banner" class="hidden">
+    <div id="pwa-banner" class="hidden" onclick="showInstallModal()" style="cursor:pointer">
       <div class="pwa-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f5f1e8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div>
-      <div class="pwa-text"><div class="pwa-title">Add ShiftPay to Home Screen</div><div class="pwa-sub">Share &#8594; Add to Home Screen</div></div>
-      <button class="pwa-close" onclick="dismissPwaBanner()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <div class="pwa-text"><div class="pwa-title">Add ShiftPay to Home Screen</div><div class="pwa-sub">Tap to install as an app</div></div>
+      <button class="pwa-close" onclick="event.stopPropagation();dismissPwaBanner()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
 
     <div id="pg-log" class="page active">
