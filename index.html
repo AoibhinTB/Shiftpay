@@ -26,9 +26,6 @@ html,body{height:100%;background:#ece5d3;font-family:'Geist',system-ui,sans-seri
 #hdr{position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--cream);padding:max(14px,calc(env(safe-area-inset-top,0px) + 14px)) 20px 12px;display:flex;align-items:center;justify-content:space-between;z-index:50}
 .brand-row{display:flex;align-items:center;gap:10px}
 .wordmark{font-family:'Fraunces',serif;font-weight:600;font-size:24px;color:var(--blue);letter-spacing:-0.025em;line-height:1;display:inline-flex;align-items:baseline}
-.f-wrap{position:relative;display:inline-block;cursor:pointer;user-select:none}
-.poo-egg{position:absolute;left:50%;top:-0.55em;transform:translateX(-50%) scale(0.6);font-size:0.48em;line-height:1;pointer-events:none;opacity:0;transition:opacity .25s ease,transform .25s cubic-bezier(.2,.7,.2,1.4)}
-.poo-egg.on{opacity:1;transform:translateX(-50%) scale(1)}
 #menu-btn{background:none;border:none;cursor:pointer;padding:6px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 #menu-btn span{display:block;width:20px;height:2px;background:currentColor;border-radius:1px}
 #content{padding-top:calc(env(safe-area-inset-top,0px) + 62px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 90px);min-height:100dvh;min-height:100vh}
@@ -213,7 +210,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
         <circle cx="512" cy="512" r="34" fill="none" stroke="#f5f1e8" stroke-width="22"/>
       </svg>
       <div class="wordmark">
-        <span>Shi</span><span class="f-wrap" id="f-wrap" onclick="togglePoo()">f<span class="poo-egg" id="poo-egg">&#128169;</span></span><span>tPay</span>
+        <span>ShiftPay</span>
       </div>
     </div>
     <button id="menu-btn" onclick="openMenu()"><span></span><span></span><span></span></button>
@@ -423,7 +420,7 @@ var DOW_IE=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 var PALETTE=['#2563eb','#7c3aed','#0d9488','#dc2626','#d97706','#0891b2','#059669','#f59e0b'];
 var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
 var settings={periodType:'weekly',nextPayslipDate:'',periodDefers:{}};
-var pooOn=false,onboarded=false;
+var onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null,bandEditSnapshot=null,pendingBackfill=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='',historyGroupMode='shifts';
 var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
@@ -437,14 +434,13 @@ function loadData(){
     var m=localStorage.getItem('shiftpay.manuals')||localStorage.getItem('sp_me');
     var st=localStorage.getItem('shiftpay.settings');
     var ob=localStorage.getItem('shiftpay.onboarded');
-    var p=localStorage.getItem('shiftpay.poo');
     if(b)bands=JSON.parse(b);else loadDefaultBands();
     if(s)shifts=JSON.parse(s);
     if(t)shiftTemplates=JSON.parse(t);else loadDefaultTemplates();
     if(m)manualEntries=JSON.parse(m);
     if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};}
     else{var oldPP=localStorage.getItem('sp_pp');if(oldPP)settings.periodType=oldPP;}
-    onboarded=ob==='1';pooOn=p==='1';
+    onboarded=ob==='1';
     ensureDefaultBands();
   }catch(e){loadDefaultBands();loadDefaultTemplates();}
 }
@@ -1573,8 +1569,6 @@ function showInstallModal(){
 }
 function closeInstallModal(){document.getElementById('install-scrim').className='scrim';document.getElementById('install-sheet').className='sheet';}
 
-function togglePoo(){pooOn=!pooOn;try{localStorage.setItem('shiftpay.poo',pooOn?'1':'0');}catch(e){}var el=document.getElementById('poo-egg');if(el)el.className='poo-egg'+(pooOn?' on':'');}
-
 function showPwaBanner(){var isInstalled=false;try{if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)isInstalled=true;if(window.navigator&&window.navigator.standalone===true)isInstalled=true;}catch(e){}var dismissed=false;try{dismissed=localStorage.getItem('shiftpay.pwa.dismissed')==='1';}catch(e){}var banner=document.getElementById('pwa-banner');if(banner&&!isInstalled&&!dismissed)banner.classList.remove('hidden');}
 function dismissPwaBanner(){try{localStorage.setItem('shiftpay.pwa.dismissed','1');}catch(e){}var banner=document.getElementById('pwa-banner');if(banner)banner.classList.add('hidden');}
 
@@ -1751,7 +1745,6 @@ shifts.forEach(function(s){
   s.bh=s.bhDates.length>0;
 });
 shifts.forEach(recomputeDateSplit);
-var pooEl=document.getElementById('poo-egg');if(pooEl&&pooOn)pooEl.className='poo-egg on';
 setLogDate(new Date().toISOString().split('T')[0]);
 renderTplChips();
 var psEl=document.getElementById('period-select');if(psEl)psEl.value=settings.periodType;
