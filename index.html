@@ -88,6 +88,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 .pill{display:inline-flex;align-items:center;background:var(--blue-soft);color:var(--blue-deep);font-family:'Geist Mono',monospace;font-size:11px;font-weight:500;border-radius:var(--r-pill);padding:3px 8px}
 .pill.bh{background:#7a3a8a22;color:var(--bh)}
 .pill.manual{background:var(--cream-deep);color:var(--muted)}
+.pill.deferred{background:#d9750618;color:#a05a00}
 .period-card{background:var(--cream-card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:8px}
 .period-card.current{border-color:var(--blue);background:var(--cream-card)}
 .period-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer}
@@ -307,7 +308,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
       <div class="pad-x">
         <div class="card" style="display:flex;flex-direction:column;gap:12px">
           <div class="field"><label class="lbl">Period type</label>
-            <select id="period-select" onchange="settings.periodType=this.value;persist();renderSummary()">
+            <select id="period-select" onchange="settings.periodType=this.value;settings.periodDefers={};persist();renderSummary()">
               <option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks</option><option value="monthly">Monthly</option>
             </select>
           </div>
@@ -404,16 +405,27 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 <div class="sheet" id="edit-sheet">
   <div id="edit-sheet-body" style="padding:0 0 16px;max-height:80vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
 </div>
+<div class="scrim" id="backfill-scrim" onclick="closeBackfillSheet(false)"></div>
+<div class="sheet" id="backfill-sheet">
+  <div class="sheet-grab"></div>
+  <div style="padding:20px 24px 24px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:6px">Apply to past shifts?</div>
+    <div class="tiny" id="backfill-msg" style="margin-bottom:20px;line-height:1.6"></div>
+    <button class="btn-primary" onclick="closeBackfillSheet(true)">Update all past shifts</button>
+    <button class="btn-secondary" style="margin-top:10px" onclick="closeBackfillSheet(false)">Only apply going forward</button>
+  </div>
+  <div style="height:8px"></div>
+</div>
 <div id="toast"></div>
 <script>
 'use strict';
 var DOW_IE=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 var PALETTE=['#2563eb','#7c3aed','#0d9488','#dc2626','#d97706','#0891b2','#059669','#f59e0b'];
 var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
-var settings={periodType:'weekly',nextPayslipDate:''};
+var settings={periodType:'weekly',nextPayslipDate:'',periodDefers:{}};
 var pooOn=false,onboarded=false;
-var openBandId=null,editingShiftId=null,confirmDeleteBandId=null;
-var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='';
+var openBandId=null,editingShiftId=null,confirmDeleteBandId=null,bandEditSnapshot=null,pendingBackfill=null;
+var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='',historyGroupMode='shifts';
 var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
 
 function persist(){try{localStorage.setItem('shiftpay.bands',JSON.stringify(bands));localStorage.setItem('shiftpay.shifts',JSON.stringify(shifts));localStorage.setItem('shiftpay.templates',JSON.stringify(shiftTemplates));localStorage.setItem('shiftpay.manuals',JSON.stringify(manualEntries));localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}catch(e){}}
@@ -430,7 +442,7 @@ function loadData(){
     if(s)shifts=JSON.parse(s);
     if(t)shiftTemplates=JSON.parse(t);else loadDefaultTemplates();
     if(m)manualEntries=JSON.parse(m);
-    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';}
+    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};}
     else{var oldPP=localStorage.getItem('sp_pp');if(oldPP)settings.periodType=oldPP;}
     onboarded=ob==='1';pooOn=p==='1';
     ensureDefaultBands();
@@ -439,7 +451,7 @@ function loadData(){
 function loadDefaultBands(){
   bands=[
     {id:'bh',name:'Bank Holiday',color:'#d97706',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh'},
-    {id:'base',name:'Standard',color:'#2563eb',rate:0,days:[0,1,2,3,4],start:'08:00',end:'20:00',slip:0,kind:'standard'},
+    {id:'base',name:'Standard',color:'#2563eb',rate:0,days:[0,1,2,3,4],start:'09:00',end:'17:00',slip:0,kind:'standard'},
     {id:'night',name:'Night',color:'#7c3aed',rate:0,days:[0,1,2,3,4,5,6],start:'20:00',end:'08:00',slip:1,kind:'premium'},
     {id:'sat',name:'Saturday',color:'#0d9488',rate:0,days:[5],start:'08:00',end:'20:00',slip:1,kind:'premium'},
     {id:'sun',name:'Sunday',color:'#dc2626',rate:0,days:[6],start:'00:00',end:'24:00',slip:1,kind:'premium'}
@@ -836,6 +848,23 @@ function getPeriodLabel(key){
   return fmt(d)+'\u2013'+fmt(end);
 }
 function payPeriodLabel(){if(settings.periodType==='weekly')return'week';if(settings.periodType==='biweekly')return'fortnight';return'month';}
+function advancePeriodKey(pk,n){
+  if(n===0)return pk;
+  if(settings.periodType==='biweekly')return pk+n;
+  var d=periodKeyToDate(pk);
+  if(settings.periodType==='monthly'){var d2=new Date(d.getFullYear(),d.getMonth()+n,1);return d2.getFullYear()*100+d2.getMonth();}
+  d.setDate(d.getDate()+7*n);
+  return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
+}
+function getPayslipLabel(key){
+  var d=periodKeyToDate(key),end;
+  if(settings.periodType==='monthly')end=new Date(d.getFullYear(),d.getMonth()+1,0);
+  else{end=new Date(d);end.setDate(d.getDate()+(settings.periodType==='weekly'?6:13));}
+  return'Payslip · '+end.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'});
+}
+function setHistoryMode(m){historyGroupMode=m;openPeriodKeys={};hasInitedPeriod=false;renderSummary();}
+function effectiveSlip(b,earnedPk){var base=(b&&b.slip!==undefined)?b.slip:0;var d=(settings.periodDefers&&settings.periodDefers[earnedPk])||0;return base+d;}
+function setPeriodDefer(k,n){if(!settings.periodDefers)settings.periodDefers={};if(n<=0)delete settings.periodDefers[k];else settings.periodDefers[k]=n;persist();renderSummary();}
 function periodToMonthKey(key){var d=periodKeyToDate(key);return d.getFullYear()*100+d.getMonth();}
 function monthKeyName(mk){var d=new Date(Math.floor(mk/100),mk%100,1);return d.toLocaleDateString('en-IE',{month:'long',year:'numeric'});}
 
@@ -847,31 +876,42 @@ function renderSummary(){
   }
   var currentKey=currentPeriodKeyOffset(0),prev1Key=currentPeriodKeyOffset(1),prev2Key=currentPeriodKeyOffset(2);
   var nextPay=0;
+  var byBand={};
+  function addToBreakdown(b){
+    var live=getBand(b.id);
+    var name=live?live.name:b.name;
+    var color=live?live.color:b.color;
+    if(!byBand[b.id])byBand[b.id]={name:name,color:color,hours:0,amount:0};
+    byBand[b.id].hours+=b.hours||0;
+    byBand[b.id].amount+=b.amount||0;
+  }
+  function bandLandsOnNextPayslip(slip,periodKey){
+    if(slip===0&&periodKey===currentKey)return true;
+    if(slip===1&&periodKey===prev1Key)return true;
+    if(slip===2&&periodKey===prev2Key)return true;
+    return false;
+  }
   shifts.forEach(function(s){
     var sk=getPeriodKey(s.date);
     if(s.dateSplit){
-      // New format: attribute per actual date (overnight splits correctly)
       for(var ds in s.dateSplit){
         var dk=getPeriodKey(ds);
         s.dateSplit[ds].forEach(function(b){
-          var slip=b.slip!==undefined?b.slip:0;
-          if(slip===0&&dk===currentKey)nextPay+=b.amount;
-          else if(slip===1&&dk===prev1Key)nextPay+=b.amount;
-          else if(slip===2&&dk===prev2Key)nextPay+=b.amount;
+          var slip=effectiveSlip(b,dk);
+          if(bandLandsOnNextPayslip(slip,dk)){nextPay+=b.amount;addToBreakdown(b);}
         });
       }
       return;
     }
     var split=s.split||[];
+    if(!split.length&&s.hm){for(var bid in s.hm){var bnd=getBand(bid);if(bnd)split.push({id:bid,name:bnd.name,color:bnd.color,hours:s.hm[bid]||0,amount:s.pm[bid]||0,slip:bnd.slip||0});}}
     if(!split.length){
       if(sk===currentKey)nextPay+=s.tp||0;
       return;
     }
     split.forEach(function(b){
-      var slip=b.slip!==undefined?b.slip:0;
-      if(slip===0&&sk===currentKey)nextPay+=b.amount;
-      else if(slip===1&&sk===prev1Key)nextPay+=b.amount;
-      else if(slip===2&&sk===prev2Key)nextPay+=b.amount;
+      var slip=effectiveSlip(b,sk);
+      if(bandLandsOnNextPayslip(slip,sk)){nextPay+=b.amount;addToBreakdown(b);}
     });
   });
   var payslipD=getNextPayslipDate(),payslipStr=fmtPayslipDate(payslipD);
@@ -882,30 +922,17 @@ function renderSummary(){
   if(settings.nextPayslipDate)html+='<div class="hero-tiny" style="margin-top:4px">Period ends <span class="hero-pill">'+payslipStr+'</span></div>';
   html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">Calculates your gross pay before tax, USC, PRSI and pension. Verify against your payslip.</div>';
   html+='</div>';
-  // Breakdown for current period
-      var byBand={};
-  shifts.forEach(function(s){
-    // Use current period only (matching shift history), with live band colors/names
-    getShiftBandsForPeriod(s,currentKey).forEach(function(b){
-      var live=getBand(b.id);
-      var name=live?live.name:b.name;
-      var color=live?live.color:b.color;
-      if(!byBand[b.id])byBand[b.id]={name:name,color:color,hours:0,amount:0};
-      byBand[b.id].hours+=b.hours;
-      byBand[b.id].amount+=b.amount;
-    });
-  });
   var bandArr=[];for(var k in byBand)bandArr.push(byBand[k]);bandArr.sort(function(a,b){return b.amount-a.amount;});
   var totalAmt=bandArr.reduce(function(a,b){return a+b.amount;},0)||1;
   if(bandArr.length){
-    html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:12px">Current period breakdown</div><div class="bar-track">';
+    html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:12px">Next payslip breakdown</div><div class="bar-track">';
     for(var i=0;i<bandArr.length;i++)html+='<div class="bar-seg" style="background:'+bandArr[i].color+';width:'+(bandArr[i].amount/totalAmt*100)+'%"></div>';
     html+='</div>';
     for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span></span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
     html+='<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;margin-top:2px"><span style="font-size:13px;font-weight:700">Total</span><span style="font-family:Fraunces,serif;font-size:22px;font-weight:600;color:var(--blue);letter-spacing:-0.01em">'+fmtEUR(bandArr.reduce(function(a,b){return a+b.amount;},0))+'</span></div>';
     html+='</div></div>';
   }
-  html+='<div class="sect-hdr"><h2>Shift history</h2></div>';
+  html+='<div class="sect-hdr"><h2>History</h2><div class="seg"><button class="'+(historyGroupMode==='shifts'?'on':'')+'" onclick="setHistoryMode(\'shifts\')">Shifts</button><button class="'+(historyGroupMode==='payslip'?'on':'')+'" onclick="setHistoryMode(\'payslip\')">Payslip</button></div></div>';
   html+=buildListHTML();
   el.innerHTML=html;
 }
@@ -999,11 +1026,27 @@ function renderTotals(){
 function togglePeriod(key){openPeriodKeys[key]=!openPeriodKeys[key];renderSummary();}
 
 function buildListHTML(){
+  var isPayslipMode=historyGroupMode==='payslip';
   var periodMap={};
   shifts.forEach(function(s){
     if(s.dateSplit&&Object.keys(s.dateSplit).length){
-      for(var ds in s.dateSplit){var pk=getPeriodKey(ds);if(!periodMap[pk])periodMap[pk]={};}
-    } else {var k=getPeriodKey(s.date);if(!periodMap[k])periodMap[k]={};}
+      for(var ds in s.dateSplit){
+        var earnedPk=getPeriodKey(ds);
+        if(isPayslipMode){
+          s.dateSplit[ds].forEach(function(b){var slip=effectiveSlip(b,earnedPk);var pk=advancePeriodKey(earnedPk,slip);if(!periodMap[pk])periodMap[pk]={};});
+        } else {
+          if(!periodMap[earnedPk])periodMap[earnedPk]={};
+        }
+      }
+    } else {
+      var earnedPk2=getPeriodKey(s.date);
+      var split0=s.split||[];
+      if(isPayslipMode&&split0.length){
+        split0.forEach(function(b){var slip=effectiveSlip(b,earnedPk2);var pk=advancePeriodKey(earnedPk2,slip);if(!periodMap[pk])periodMap[pk]={};});
+      } else {
+        if(!periodMap[earnedPk2])periodMap[earnedPk2]={};
+      }
+    }
   });
   manualEntries.forEach(function(m){var k=getPeriodKey(m.date);if(!periodMap[k])periodMap[k]={};});
   var periodKeys=Object.keys(periodMap).map(Number).sort(function(a,b){return b-a;});
@@ -1031,8 +1074,15 @@ function buildListHTML(){
         shifts.forEach(function(s){
           if(s.dateSplit&&Object.keys(s.dateSplit).length){
             for(var ds in s.dateSplit){
-              if(getPeriodKey(ds)!==k)continue;
-              var dayBands=s.dateSplit[ds];
+              var earnedPk=getPeriodKey(ds);
+              var dayBands;
+              if(isPayslipMode){
+                dayBands=s.dateSplit[ds].filter(function(b){var slip=effectiveSlip(b,earnedPk);return advancePeriodKey(earnedPk,slip)===k;});
+                if(!dayBands.length)continue;
+              } else {
+                if(earnedPk!==k)continue;
+                dayBands=s.dateSplit[ds];
+              }
               var dayHrs=dayBands.reduce(function(t,b){return t+b.hours;},0);
               var dayPay=dayBands.reduce(function(t,b){return t+b.amount;},0);
               var isFirst=ds===s.date;
@@ -1040,9 +1090,19 @@ function buildListHTML(){
               var dEnd=(isFirst&&isOvernight(s.start,s.end))?'00:00':s.end;
               dayEntries.push({type:'shift-day',date:ds,shift:s,bands:dayBands,hours:dayHrs,pay:dayPay,dStart:dStart,dEnd:dEnd,isFirst:isFirst});
             }
-          } else if(getPeriodKey(s.date)===k){
+          } else {
+            var earnedPk3=getPeriodKey(s.date);
             var split=s.split||[];
-            dayEntries.push({type:'shift',date:s.date,shift:s,bands:split,hours:s.th||0,pay:s.tp||0,dStart:s.start,dEnd:s.end,isFirst:true});
+            if(isPayslipMode&&split.length){
+              var relBands=split.filter(function(b){var slip=effectiveSlip(b,earnedPk3);return advancePeriodKey(earnedPk3,slip)===k;});
+              if(!relBands.length)return;
+              var hrs=relBands.reduce(function(t,b){return t+b.hours;},0);
+              var pay=relBands.reduce(function(t,b){return t+b.amount;},0);
+              dayEntries.push({type:'shift',date:s.date,shift:s,bands:relBands,hours:hrs,pay:pay,dStart:s.start,dEnd:s.end,isFirst:true});
+            } else {
+              if(earnedPk3!==k)return;
+              dayEntries.push({type:'shift',date:s.date,shift:s,bands:split,hours:s.th||0,pay:s.tp||0,dStart:s.start,dEnd:s.end,isFirst:true});
+            }
           }
         });
         manualEntries.forEach(function(m){if(getPeriodKey(m.date)===k)dayEntries.push({type:'manual',date:m.date,item:m});});
@@ -1051,24 +1111,28 @@ function buildListHTML(){
         dayEntries.forEach(function(e){
           if(e.type==='manual'){periodPay+=e.item.amount||0;}
           else{
-            // For hours: use dateSplit hours (correctly break-adjusted after recalc)
-            // For regular shifts with no dateSplit, use s.th which is always correct
-            var hrs=e.shift.dateSplit?e.hours:(e.shift.th||0);
+            var hrs=isPayslipMode?(e.hours||0):(e.shift.dateSplit?e.hours:(e.shift.th||0));
             periodHrs+=hrs;periodPay+=e.pay||0;
           }
         });
         var totalItems=dayEntries.length;
         var cardCls='period-card'+(isCurrent?' current':'');
         var chevCls='chev'+(open?' open':'');
-        var entrieslbl=totalItems+' entr'+(totalItems!==1?'ies':'y')+' \u00b7 '+periodHrs.toFixed(1)+'h worked';
+        var deferN=(!isPayslipMode&&settings.periodDefers&&settings.periodDefers[k])||0;
+        var entrieslbl=totalItems+' entr'+(totalItems!==1?'ies':'y')+' \u00b7 '+periodHrs.toFixed(1)+'h';
+        var subExtra=deferN>0?' <span style="color:#a05a00">\u00b7 Deferred +'+deferN+'</span>':'';
+        var headerLabel=isPayslipMode?getPayslipLabel(k):getPeriodLabel(k);
         html+='<div class="'+cardCls+'">';
         html+='<div class="period-head" onclick="togglePeriod('+k+')">';
-        html+='<div><div class="period-name">'+getPeriodLabel(k)+'</div><div class="period-sub">'+entrieslbl+'</div></div>';
+        html+='<div><div class="period-name">'+headerLabel+'</div><div class="period-sub">'+entrieslbl+subExtra+'</div></div>';
         html+='<div style="display:flex;align-items:center"><div class="period-amt">'+fmtEUR(periodPay)+'</div>';
         html+='<div class="'+chevCls+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div></div>';
         html+='</div>';
         if(open){
           html+='<div class="period-body">';
+          if(!isPayslipMode){
+            html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0 10px;font-size:12.5px;color:var(--muted)"><span>Defer period to later payslip</span><div class="seg"><button class="'+(deferN===0?'on':'')+'" onclick="event.stopPropagation();setPeriodDefer('+k+',0)">Off</button><button class="'+(deferN===1?'on':'')+'" onclick="event.stopPropagation();setPeriodDefer('+k+',1)">+1</button><button class="'+(deferN===2?'on':'')+'" onclick="event.stopPropagation();setPeriodDefer('+k+',2)">+2</button></div></div>';
+          }
           var bpMap={};
           dayEntries.forEach(function(e){if(e.type==='manual')return;(e.bands||[]).forEach(function(b){if(!bpMap[b.id])bpMap[b.id]={name:b.name,color:b.color,hours:0,amount:0};bpMap[b.id].hours+=b.hours;bpMap[b.id].amount+=b.amount;});});
           var bpArr=[];for(var kk in bpMap)bpArr.push(bpMap[kk]);bpArr.sort(function(a,b){return b.amount-a.amount;});
@@ -1097,11 +1161,12 @@ function buildListHTML(){
             var titleStr=entry.isFirst?(s.tplName||timeStr):'(cont.) '+timeStr;
             var subTime=s.tplName&&entry.isFirst?' \u00b7 '+timeStr:'';
             var bhPill=s.bh?'<span class="pill bh">BH</span>':'';
+            var deferredPill=(isPayslipMode&&getPeriodKey(entry.date)!==k)?'<span class="pill deferred">Deferred</span>':'';
             html+='<div class="shift-row" style="cursor:pointer" onclick="startEdit('+s.id+')">';
             html+='<div class="shift-day"><div class="num">'+dayNum+'</div><div class="dow">'+dowStr+'</div></div>';
             html+='<div class="shift-meta">';
             html+='<div class="shift-title">'+esc(titleStr)+subTime+'</div>';
-            html+='<div class="shift-sub"><span style="min-width:36px;display:inline-block">'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+bhPill+'</div>';
+            html+='<div class="shift-sub"><span style="min-width:36px;display:inline-block">'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+bhPill+deferredPill+'</div>';
             html+='</div>';
             html+='<div style="display:flex;align-items:center;gap:6px"><div class="shift-amt">'+fmtEUR(entry.pay)+'</div>';
             html+='<button onclick="event.stopPropagation();delShift('+s.id+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:18px;padding:2px">&times;</button></div>';
@@ -1303,16 +1368,124 @@ function renderBands(){
   }
   el.innerHTML=html;
 }
-function toggleBand(id){openBandId=(openBandId===id)?null:id;confirmDeleteBandId=null;renderBands();}
+function revertBandEdit(){
+  if(!bandEditSnapshot)return;
+  var b=getBand(bandEditSnapshot.id);
+  if(b){
+    b.rate=bandEditSnapshot.rate;
+    b.slip=bandEditSnapshot.slip;
+    b.name=bandEditSnapshot.name;
+    b.start=bandEditSnapshot.start;
+    b.end=bandEditSnapshot.end;
+    try{b.days=JSON.parse(bandEditSnapshot.days||'[]');}catch(e){b.days=[];}
+  }
+  bandEditSnapshot=null;
+}
+function toggleBand(id){
+  if(bandEditSnapshot)revertBandEdit();
+  if(openBandId===id){openBandId=null;}
+  else{
+    openBandId=id;
+    var b=getBand(id);
+    bandEditSnapshot=b?{id:id,rate:b.rate||0,slip:b.slip||0,days:JSON.stringify((b.days||[]).slice().sort()),start:b.start||'',end:b.end||'',name:b.name||''}:null;
+  }
+  confirmDeleteBandId=null;renderBands();
+}
+function shiftUsesBand(s,bandId){
+  if(s.split)for(var i=0;i<s.split.length;i++)if(s.split[i].id===bandId)return true;
+  if(s.dateSplit)for(var ds in s.dateSplit)for(var j=0;j<s.dateSplit[ds].length;j++)if(s.dateSplit[ds][j].id===bandId)return true;
+  if(s.hm&&s.hm[bandId]!==undefined)return true;
+  return false;
+}
+function recomputeShiftFromBands(s){
+  var newSplit=splitShift(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false);
+  s.split=newSplit;s.hm={};s.pm={};
+  newSplit.forEach(function(b){s.hm[b.id]=b.hours;s.pm[b.id]=b.amount;});
+  s.th=newSplit.reduce(function(t,b){return t+b.hours;},0);
+  s.tp=newSplit.reduce(function(t,b){return t+b.amount;},0);
+  recomputeDateSplit(s);
+}
+function backfillBand(c){
+  // c: {id, rate, slip, name, doRate, doSlip, doName, doStruct}
+  if(c.doStruct){
+    shifts.forEach(function(s){recomputeShiftFromBands(s);});
+    return;
+  }
+  shifts.forEach(function(s){
+    var touched=false;
+    if(s.split)s.split.forEach(function(b){if(b.id===c.id){if(c.doSlip)b.slip=c.slip;if(c.doRate){b.rate=c.rate;b.amount=(b.hours||0)*c.rate;}if(c.doName)b.name=c.name;touched=true;}});
+    if(s.dateSplit)for(var ds in s.dateSplit)s.dateSplit[ds].forEach(function(b){if(b.id===c.id){if(c.doSlip)b.slip=c.slip;if(c.doRate){b.rate=c.rate;b.amount=(b.hours||0)*c.rate;}if(c.doName)b.name=c.name;touched=true;}});
+    if(c.doRate&&s.hm&&s.pm&&s.hm[c.id]!==undefined){s.pm[c.id]=(s.hm[c.id]||0)*c.rate;touched=true;}
+    if(touched&&c.doRate){
+      var tp=0;
+      if(s.dateSplit){for(var ds2 in s.dateSplit)s.dateSplit[ds2].forEach(function(b){tp+=b.amount||0;});}
+      else if(s.split&&s.split.length)s.split.forEach(function(b){tp+=b.amount||0;});
+      else if(s.pm){for(var bid in s.pm)tp+=s.pm[bid]||0;}
+      s.tp=tp;
+    }
+  });
+}
 function setBandColor(id,color){var b=getBand(id);if(b){b.color=color;renderBands();}}
 function updateBandName(id,v){var b=getBand(id);if(b)b.name=v;}
 function updateBandField(id,f,v){var b=getBand(id);if(b)b[f]=v;}
 function updateBandRate(id,v){var b=getBand(id);if(b)b.rate=parseFloat(v)||0;}
 function updateBandSlip(id,v){var b=getBand(id);if(b){b.slip=parseInt(v)||0;b.arrears=b.slip;}}
 function toggleDay(id,d){var b=getBand(id);if(!b)return;if(!b.days)b.days=[];var i=b.days.indexOf(d);i===-1?b.days.push(d):b.days.splice(i,1);renderBands();}
-function addBand(){var color=PALETTE[bands.length%PALETTE.length],newId='band_'+Date.now();bands.push({id:newId,name:'New Band',color:color,rate:0,days:[],start:'09:00',end:'17:00',slip:0,kind:'premium'});openBandId=newId;persist();renderBands();}
-function saveBand(id){persist();openBandId=null;renderBands();var ok=document.getElementById('save-ok');if(ok){ok.classList.add('on');setTimeout(function(){ok.classList.remove('on');},2200);}toast('Band saved');}
-function deleteBandNow(id){bands=bands.filter(function(b){return String(b.id)!==String(id);});if(String(openBandId)===String(id))openBandId=null;confirmDeleteBandId=null;persist();renderBands();toast('Band removed');}
+function addBand(){if(bandEditSnapshot)revertBandEdit();var color=PALETTE[bands.length%PALETTE.length],newId='band_'+Date.now();bands.push({id:newId,name:'New Band',color:color,rate:0,days:[],start:'09:00',end:'17:00',slip:0,kind:'premium'});openBandId=newId;persist();renderBands();}
+function saveBand(id){
+  var b=getBand(id);
+  var needBackfill=false;
+  if(b&&bandEditSnapshot&&bandEditSnapshot.id===id){
+    var rateChanged=(b.rate||0)!==(bandEditSnapshot.rate||0);
+    var slipChanged=(b.slip||0)!==(bandEditSnapshot.slip||0);
+    var nameChanged=(b.name||'')!==(bandEditSnapshot.name||'');
+    var daysChanged=JSON.stringify((b.days||[]).slice().sort())!==bandEditSnapshot.days;
+    var startChanged=(b.start||'')!==bandEditSnapshot.start;
+    var endChanged=(b.end||'')!==bandEditSnapshot.end;
+    var structChanged=daysChanged||startChanged||endChanged;
+    var anyShifts=shifts.length>0;
+    var usingShifts=shifts.some(function(s){return shiftUsesBand(s,id);});
+    var triggerStruct=structChanged&&anyShifts;
+    var triggerNonStruct=(rateChanged||slipChanged||nameChanged)&&usingShifts;
+    if(triggerStruct||triggerNonStruct){
+      needBackfill=true;
+      pendingBackfill={id:id,rate:b.rate||0,slip:b.slip||0,name:b.name||'this band',doRate:rateChanged,doSlip:slipChanged,doName:nameChanged,doStruct:structChanged};
+    }
+  }
+  bandEditSnapshot=null;persist();openBandId=null;renderBands();
+  var ok=document.getElementById('save-ok');if(ok){ok.classList.add('on');setTimeout(function(){ok.classList.remove('on');},2200);}
+  if(needBackfill)openBackfillSheet();else toast('Band saved');
+}
+function openBackfillSheet(){
+  if(!pendingBackfill)return;
+  var msg;
+  if(pendingBackfill.doStruct){
+    msg='All past shifts will be recalculated with the new band settings. This may change amounts on shifts that did not previously use '+pendingBackfill.name+'.';
+  } else {
+    var bits=[];
+    if(pendingBackfill.doRate)bits.push('rate');
+    if(pendingBackfill.doSlip)bits.push('payslip routing');
+    if(pendingBackfill.doName)bits.push('name');
+    var what=bits.length===1?bits[0]:bits.slice(0,-1).join(', ')+' and '+bits[bits.length-1];
+    msg='Past shifts using '+pendingBackfill.name+' will be updated to use the new '+what+'.';
+  }
+  document.getElementById('backfill-msg').textContent=msg;
+  document.getElementById('backfill-scrim').className='scrim open';
+  document.getElementById('backfill-sheet').className='sheet open';
+}
+function closeBackfillSheet(applyToPast){
+  document.getElementById('backfill-scrim').className='scrim';
+  document.getElementById('backfill-sheet').className='sheet';
+  if(applyToPast&&pendingBackfill){
+    backfillBand(pendingBackfill);
+    persist();renderBands();renderSummary();
+    toast('Past shifts updated');
+  } else {
+    toast('Band saved');
+  }
+  pendingBackfill=null;
+}
+function deleteBandNow(id){bands=bands.filter(function(b){return String(b.id)!==String(id);});if(String(openBandId)===String(id))openBandId=null;if(bandEditSnapshot&&String(bandEditSnapshot.id)===String(id))bandEditSnapshot=null;confirmDeleteBandId=null;persist();renderBands();toast('Band removed');}
 
 var editingTplId=null;
 function renderTemplates(){
@@ -1406,6 +1579,7 @@ function showPwaBanner(){var isInstalled=false;try{if(window.matchMedia&&window.
 function dismissPwaBanner(){try{localStorage.setItem('shiftpay.pwa.dismissed','1');}catch(e){}var banner=document.getElementById('pwa-banner');if(banner)banner.classList.add('hidden');}
 
 function go(pg,btn){
+  if(pg!=='setup'&&bandEditSnapshot){revertBandEdit();openBandId=null;}
   document.querySelectorAll('.page').forEach(function(p){p.style.display='none';});
   document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
   var pgEl=document.getElementById('pg-'+pg);if(pgEl)pgEl.style.display='block';
@@ -1454,7 +1628,7 @@ function handleImport(e){
     if(data.shifts)shifts=data.shifts;
     if(data.manualEntries)manualEntries=data.manualEntries;
     if(data.shiftTemplates)shiftTemplates=data.shiftTemplates;
-    if(data.settings){settings.periodType=data.settings.periodType||settings.periodType;settings.nextPayslipDate=data.settings.nextPayslipDate||'';}
+    if(data.settings){settings.periodType=data.settings.periodType||settings.periodType;settings.nextPayslipDate=data.settings.nextPayslipDate||'';settings.periodDefers=data.settings.periodDefers||{};}
     ensureDefaultBands();persist();hasInitedPeriod=false;
     renderBands();renderTemplates();renderTplChips();renderSummary();
     var ps=document.getElementById('period-select');if(ps)ps.value=settings.periodType;
@@ -1591,6 +1765,7 @@ initSheetSwipe('success-sheet',closeSuccess);
 initSheetSwipe('day-sheet',closeDayModal);
 initSheetSwipe('install-sheet',closeInstallModal);
 initSheetSwipe('edit-sheet',cancelEdit);
+initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
 </script>
 <script data-goatcounter="https://aoibhintb.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
