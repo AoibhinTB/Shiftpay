@@ -1,10 +1,18 @@
-var CACHE = 'shiftpay-v33';
+var CACHE = 'shiftpay-v35';
+var ASSETS = [
+  './',
+  './index.html',
+  './fonts/fraunces.woff2',
+  './fonts/geist.woff2',
+  './fonts/geist-mono.woff2',
+  './shiftpay-clock-cream-180.png',
+  './shiftpay-clock-cream-512.png',
+  './shiftpay-clock-cream-1024.png'
+];
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
-    caches.open(CACHE).then(function(cache) {
-      return cache.addAll(['/', './index.html']);
-    })
+    caches.open(CACHE).then(function(cache) { return cache.addAll(ASSETS); })
   );
   self.skipWaiting();
 });
@@ -22,16 +30,28 @@ self.addEventListener('activate', function(e) {
 });
 
 self.addEventListener('fetch', function(e) {
-  if (e.request.mode === 'navigate') {
+  var req = e.request;
+  if (req.method !== 'GET') return;
+
+  if (req.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request).then(function(response) {
+      fetch(req).then(function(res) {
         return caches.open(CACHE).then(function(cache) {
-          cache.put(e.request, response.clone());
-          return response;
+          cache.put(req, res.clone());
+          return res;
         });
       }).catch(function() {
-        return caches.match(e.request);
+        return caches.match(req).then(function(cached) {
+          return cached || caches.match('./index.html') || caches.match('./');
+        });
       })
     );
+    return;
   }
+
+  e.respondWith(
+    caches.match(req).then(function(cached) {
+      return cached || fetch(req);
+    })
+  );
 });
