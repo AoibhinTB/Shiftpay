@@ -1,4 +1,4 @@
-var CACHE = 'shiftpay-v35';
+var CACHE = 'shiftpay-v38';
 var ASSETS = [
   './',
   './index.html',
@@ -51,7 +51,14 @@ self.addEventListener('fetch', function(e) {
 
   e.respondWith(
     caches.match(req).then(function(cached) {
-      return cached || fetch(req);
+      if (cached) return cached;
+      return fetch(req).then(function(res) {
+        if (res.ok && req.url.indexOf(self.location.origin) === 0) {
+          var copy = res.clone();
+          caches.open(CACHE).then(function(cache) { cache.put(req, copy); });
+        }
+        return res;
+      });
     })
   );
 });
