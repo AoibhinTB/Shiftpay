@@ -1,7 +1,8 @@
-var CACHE = 'shiftpay-v39';
+var CACHE = 'shiftpay-v40';
 var ASSETS = [
   './',
   './index.html',
+  './manifest.webmanifest',
   './fonts/fraunces.woff2',
   './fonts/geist.woff2',
   './fonts/geist-mono.woff2',

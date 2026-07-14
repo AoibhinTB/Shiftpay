@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ShiftPay">
 <meta name="theme-color" content="#f5f1e8">
+<link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" id="ati" href="./shiftpay-clock-cream-180.png">
 <link rel="icon" type="image/png" sizes="180x180" href="./shiftpay-clock-cream-180.png">
 <link rel="icon" type="image/png" sizes="512x512" href="./shiftpay-clock-cream-512.png">
@@ -1664,8 +1665,6 @@ function nextOnboarding(){if(onbStep<onbSteps.length-1){onbStep++;renderOnboardi
 function skipOnboarding(){onboarded=true;try{localStorage.setItem('shiftpay.onboarded','1');}catch(e){}document.getElementById('onboarding').classList.add('hidden');}
 
 function injectPWA(){
-  var ati=document.getElementById('ati');if(ati)ati.href='./shiftpay-clock-cream-180.png';
-  try{var m={name:'ShiftPay',short_name:'ShiftPay',start_url:location.href,display:'standalone',background_color:'#f5f1e8',theme_color:'#1f4d8a',icons:[{src:'./shiftpay-clock-cream-180.png',sizes:'180x180',type:'image/png'},{src:'./shiftpay-clock-cream-512.png',sizes:'512x512',type:'image/png'},{src:'./shiftpay-clock-cream-1024.png',sizes:'1024x1024',type:'image/png'}]};var blob=new Blob([JSON.stringify(m)],{type:'application/manifest+json'});var link=document.createElement('link');link.rel='manifest';link.href=URL.createObjectURL(blob);document.head.appendChild(link);}catch(e){}
   if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(function(){});
   showPwaBanner();
 }

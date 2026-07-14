@@ -1,0 +1,15 @@
+{
+  "name": "ShiftPay",
+  "short_name": "ShiftPay",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f1e8",
+  "theme_color": "#1f4d8a",
+  "icons": [
+    { "src": "./shiftpay-clock-cream-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "./shiftpay-clock-cream-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./shiftpay-clock-cream-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}
