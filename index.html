@@ -144,8 +144,6 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 .sheet h3{font-size:17px;font-weight:700;padding:16px 24px 8px;letter-spacing:-0.01em}
 .sheet-item{display:flex;align-items:center;gap:14px;padding:13px 24px;width:100%;background:none;border:none;cursor:pointer;font-family:'Geist',sans-serif;font-size:14px;font-weight:500;color:var(--ink);text-align:left}
 .sheet-item:active{background:var(--cream-deep)}
-@keyframes install-pulse{0%,100%{background:transparent}50%{background:rgba(37,99,235,.18)}}
-.sheet-item.pulse-attention{animation:install-pulse 1.1s ease-in-out 3}
 .si-icon{width:36px;height:36px;border-radius:10px;background:var(--cream-deep);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .si-sub{font-size:12px;color:var(--muted);margin-top:1px}
 .success-sheet{padding:28px 24px 24px}
@@ -221,7 +219,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
   </div>
 
   <div id="content">
-    <div id="pwa-banner" class="hidden" onclick="handleInstallBannerClick()" style="cursor:pointer">
+    <div id="pwa-banner" class="hidden" onclick="showInstallModal()" style="cursor:pointer">
       <div class="pwa-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f5f1e8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div>
       <div class="pwa-text"><div class="pwa-title">Add ShiftPay to Home Screen</div><div class="pwa-sub">Tap to install as an app</div></div>
       <button class="pwa-close" onclick="event.stopPropagation();dismissPwaBanner()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -1549,22 +1547,11 @@ function initSheetSwipe(sheetId,closeFn){
   sheet.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-startY>60)closeMenu();},{passive:true});
 })();
 var deferredInstallPrompt=null;
-window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredInstallPrompt=e;updateInstallVisibility();});
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredInstallPrompt=e;updateInstallVisibility();showPwaBanner();});
 window.addEventListener('appinstalled',function(){deferredInstallPrompt=null;updateInstallVisibility();});
 function isStandalone(){try{if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)return true;if(window.navigator&&window.navigator.standalone===true)return true;}catch(e){}return false;}
 function isIOSDevice(){var ua=navigator.userAgent||'';if(/iPad|iPhone|iPod/.test(ua))return true;if(/^Mac/.test(navigator.platform||'')&&navigator.maxTouchPoints>1)return true;return false;}
 function isAndroidDevice(){return /Android/i.test(navigator.userAgent||'');}
-function handleInstallBannerClick(){
-  if(deferredInstallPrompt){showInstallModal();return;}
-  if(isAndroidDevice()){
-    openMenu();
-    var el=document.getElementById('install-menu-item');
-    if(el){el.classList.remove('pulse-attention');void el.offsetWidth;el.classList.add('pulse-attention');setTimeout(function(){el.classList.remove('pulse-attention');},3400);}
-    toast('Tap Save to home screen below');
-    return;
-  }
-  showInstallModal();
-}
 function updateInstallVisibility(){var el=document.getElementById('install-menu-item');if(el)el.style.display=isStandalone()?'none':'';}
 function showInstallModal(){
   if(deferredInstallPrompt){
@@ -1585,7 +1572,7 @@ function showInstallModal(){
 }
 function closeInstallModal(){document.getElementById('install-scrim').className='scrim';document.getElementById('install-sheet').className='sheet';}
 
-function showPwaBanner(){var isInstalled=false;try{if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)isInstalled=true;if(window.navigator&&window.navigator.standalone===true)isInstalled=true;}catch(e){}var dismissed=false;try{dismissed=localStorage.getItem('shiftpay.pwa.dismissed')==='1';}catch(e){}var banner=document.getElementById('pwa-banner');if(banner&&!isInstalled&&!dismissed)banner.classList.remove('hidden');}
+function showPwaBanner(){var isInstalled=false;try{if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)isInstalled=true;if(window.navigator&&window.navigator.standalone===true)isInstalled=true;}catch(e){}var dismissed=false;try{dismissed=localStorage.getItem('shiftpay.pwa.dismissed')==='1';}catch(e){}if(isInstalled||dismissed)return;if(isAndroidDevice()&&!deferredInstallPrompt)return;var banner=document.getElementById('pwa-banner');if(banner)banner.classList.remove('hidden');}
 function dismissPwaBanner(){try{localStorage.setItem('shiftpay.pwa.dismissed','1');}catch(e){}var banner=document.getElementById('pwa-banner');if(banner)banner.classList.add('hidden');}
 
 function go(pg,btn){
