@@ -1294,22 +1294,25 @@ function delShift(id){shifts=shifts.filter(function(s){return s.id!==id;});persi
 function delManual(id){manualEntries=manualEntries.filter(function(m){return m.id!==id;});persist();renderSummary();toast('Entry removed');}
 function clearAll(){shifts=[];manualEntries=[];persist();editingShiftId=null;hasInitedPeriod=false;renderSummary();toast('All shifts cleared');}
 
+function currentCalOffset(){return totalsRange==='month'?totalsMonthOffset:calMonthOffset;}
+function shiftCalMonth(delta){if(totalsRange==='month')totalsMonthOffset+=delta;else calMonthOffset+=delta;renderTotals();}
 function buildCalendarHTML(){
   var today=new Date();
-  var anchor=new Date(today.getFullYear(),today.getMonth()+calMonthOffset,1);
+  var offset=currentCalOffset();
+  var anchor=new Date(today.getFullYear(),today.getMonth()+offset,1);
   var year=anchor.getFullYear(),month=anchor.getMonth();
   var monthName=anchor.toLocaleDateString('en-IE',{month:'long',year:'numeric'});
   var firstDow=(new Date(year,month,1).getDay()+6)%7,daysInMonth=new Date(year,month+1,0).getDate();
   var byDate={};
   shifts.forEach(function(s){var d=new Date(s.date+'T12:00');if(d.getFullYear()===year&&d.getMonth()===month){var k=d.getDate();if(!byDate[k])byDate[k]=[];byDate[k].push(s);}});
-  var html='<div><div class="cal-nav"><button class="cal-nav-btn" onclick="calMonthOffset--;renderTotals()">\u2039</button><div class="cal-nav-lbl">'+monthName+'</div><button class="cal-nav-btn" onclick="calMonthOffset++;renderTotals()">\u203a</button></div>';
+  var html='<div><div class="cal-nav"><button class="cal-nav-btn" onclick="shiftCalMonth(-1)">\u2039</button><div class="cal-nav-lbl">'+monthName+'</div><button class="cal-nav-btn" onclick="shiftCalMonth(1)">\u203a</button></div>';
   html+='<div class="pad-x"><div class="card" style="padding:14px">';
   html+='<div class="cal-grid" style="margin-bottom:6px">';
   ['M','T','W','T','F','S','S'].forEach(function(d){html+='<div class="cal-dh">'+d+'</div>';});
   html+='</div><div class="cal-grid">';
   for(var i=0;i<firstDow;i++)html+='<div style="aspect-ratio:1/1"></div>';
   for(var d=1;d<=daysInMonth;d++){
-    var dayShifts=byDate[d]||[],isToday=d===today.getDate()&&calMonthOffset===0;
+    var dayShifts=byDate[d]||[],isToday=d===today.getDate()&&offset===0;
     var cellDate=dateStr(new Date(year,month,d));
     html+='<div class="cal-cell'+(isToday?' today':dayShifts.length?' has-shift':'')+'"' +(dayShifts.length?(' data-d="'+cellDate+'" onclick="openDay(this)"'):'')+ '><span class="cn">'+d+'</span>';
     if(dayShifts.length){
