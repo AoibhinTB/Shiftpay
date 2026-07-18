@@ -89,6 +89,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 .pill.bh{background:#7a3a8a22;color:var(--bh)}
 .pill.manual{background:var(--cream-deep);color:var(--muted)}
 .pill.deferred{background:#d9750618;color:#a05a00}
+.pill.call{background:#0891b218;color:#0891b2}
 .period-card{background:var(--cream-card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:8px}
 .period-card.current{border-color:var(--blue);background:var(--cream-card)}
 .period-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer}
@@ -337,7 +338,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
       </div>
       <div class="sect-hdr"><h2>How pay is calculated</h2></div>
       <div class="pad-x">
-        <div class="card"><div class="tiny" style="line-height:1.6">Bands with a higher rate take priority where they overlap. Shows gross pay only. Tax, USC, PRSI and pension are not deducted.</div></div>
+        <div class="card"><div class="tiny" style="line-height:1.6">Bands with a higher rate take priority where they overlap. Off-site call shifts pay your call rates, and any called in time pays your normal rates instead. Breaks do not apply to call shifts. Shows gross pay only. Tax, USC, PRSI and pension are not deducted.</div></div>
       </div>
       <div style="height:20px"></div>
     </div>
@@ -481,7 +482,8 @@ function loadDefaultTemplates(){
     {id:'t1',name:'Day on call',start:'08:00',end:'20:00',breakMin:30,breakStart:'13:00'},
     {id:'t2',name:'Night',start:'20:00',end:'09:00',breakMin:30,breakStart:'02:00'},
     {id:'t3',name:'Twilight',start:'16:00',end:'00:00',breakMin:0,breakStart:''},
-    {id:'t4',name:'Weekend long',start:'08:00',end:'20:00',breakMin:60,breakStart:'13:30'}
+    {id:'t4',name:'Weekend long',start:'08:00',end:'20:00',breakMin:60,breakStart:'13:30'},
+    {id:'t5',name:'Night call from home',start:'18:00',end:'08:00',breakMin:0,breakStart:'',offsite:true}
   ];
 }
 function ensureDefaultBands(){
@@ -1252,12 +1254,13 @@ function buildListHTML(){
             var titleStr=entry.isFirst?(s.tplName||timeStr):'(cont.) '+timeStr;
             var subTime=s.tplName&&entry.isFirst?' \u00b7 '+timeStr:'';
             var bhPill=s.bh?'<span class="pill bh">BH</span>':'';
+            var callPill=s.offsite?'<span class="pill call">Call</span>':'';
             var deferredPill=(isPayslipMode&&getPeriodKey(entry.date)!==k)?'<span class="pill deferred">Deferred</span>':'';
             html+='<div class="shift-row" style="cursor:pointer" onclick="startEdit('+s.id+')">';
             html+='<div class="shift-day"><div class="num">'+dayNum+'</div><div class="dow">'+dowStr+'</div></div>';
             html+='<div class="shift-meta">';
             html+='<div class="shift-title">'+esc(titleStr)+subTime+'</div>';
-            html+='<div class="shift-sub"><span style="min-width:36px;display:inline-block">'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+bhPill+deferredPill+'</div>';
+            html+='<div class="shift-sub"><span style="min-width:36px;display:inline-block">'+totalH.toFixed(1)+'h</span><div class="band-bar">'+barSegs+'</div>'+bhPill+callPill+deferredPill+'</div>';
             html+='</div>';
             html+='<div style="display:flex;align-items:center;gap:6px"><div class="shift-amt">'+fmtEUR(entry.pay)+'</div>';
             html+='<button onclick="event.stopPropagation();delShift('+s.id+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:18px;padding:2px">&times;</button></div>';
@@ -1655,13 +1658,14 @@ function renderTemplates(){
     var brkStr=t.breakMin>0?' \u00b7 '+t.breakMin+' min break':'';
     html+='<div style="background:var(--cream-card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:8px">';
     html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:13px 14px;cursor:pointer" onclick="toggleTplEdit(\''+esc(t.id)+'\')">';
-    html+='<div><div style="font-size:14.5px;font-weight:700">'+esc(t.name)+'</div><div class="mono" style="font-size:10.5px;color:var(--muted);margin-top:2px">'+(t.start&&t.end?t.start+'\u2013'+t.end:'No times set')+brkStr+'</div></div>';
+    html+='<div><div style="font-size:14.5px;font-weight:700">'+esc(t.name)+'</div><div class="mono" style="font-size:10.5px;color:var(--muted);margin-top:2px">'+(t.start&&t.end?t.start+'\u2013'+t.end:'No times set')+brkStr+(t.offsite?' \u00b7 Call':'')+'</div></div>';
     html+='<div class="chev'+(open?' open':'')+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div></div>';
     if(open){
       html+='<div style="border-top:1px solid var(--line-soft);padding:14px;background:var(--cream)"><div style="display:grid;gap:10px">';
       html+='<div class="field"><label class="lbl">Name</label><input type="text" id="tn-'+esc(t.id)+'" value="'+esc(t.name)+'"></div>';
       html+='<div class="row-2"><div class="field"><label class="lbl">Start</label><input type="time" id="ts-'+esc(t.id)+'" value="'+(t.start||'')+'"></div><div class="field"><label class="lbl">End</label><input type="time" id="te-'+esc(t.id)+'" value="'+(t.end||'')+'"></div></div>';
       html+='<div class="row-2"><div class="field"><label class="lbl">Break</label><select id="tbr-'+esc(t.id)+'"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option></select></div><div class="field"><label class="lbl">Break Start</label><input type="time" id="tbs-'+esc(t.id)+'" value="'+(t.breakStart||'')+'"></div></div>';
+      html+='<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:2px 0"><input type="checkbox" id="toff-'+esc(t.id)+'" '+(t.offsite?'checked':'')+' style="accent-color:var(--blue)"><span style="font-size:13px">Off-site call</span></label>';
       html+='</div><div style="display:flex;gap:8px;margin-top:12px;border-top:1px solid var(--line-soft);padding-top:12px"><button class="btn-primary" style="margin-top:0" onclick="saveTpl(\''+esc(t.id)+'\')">Save</button><button class="btn-ghost btn-warn" onclick="deleteTpl(\''+esc(t.id)+'\')">Delete</button></div>';
       html+='</div>';
       setTimeout(function(tid){return function(){var se=document.getElementById('tbr-'+tid);if(se){var tm=null;for(var i=0;i<shiftTemplates.length;i++)if(shiftTemplates[i].id===tid){tm=shiftTemplates[i];break;}if(tm)se.value=String(tm.breakMin||0);}};}(t.id),0);
@@ -1675,8 +1679,9 @@ function addTemplate(){var t={id:'tpl_'+Date.now(),name:'New Shift',start:'',end
 function saveTpl(id){
   var t=null;for(var i=0;i<shiftTemplates.length;i++)if(String(shiftTemplates[i].id)===String(id)){t=shiftTemplates[i];break;}
   if(!t)return;
-  var ne=document.getElementById('tn-'+id),se=document.getElementById('ts-'+id),ee=document.getElementById('te-'+id),bre=document.getElementById('tbr-'+id),bse=document.getElementById('tbs-'+id);
+  var ne=document.getElementById('tn-'+id),se=document.getElementById('ts-'+id),ee=document.getElementById('te-'+id),bre=document.getElementById('tbr-'+id),bse=document.getElementById('tbs-'+id),toe=document.getElementById('toff-'+id);
   t.name=ne?ne.value:t.name;t.start=se?se.value:'';t.end=ee?ee.value:'';t.breakMin=bre?parseInt(bre.value)||0:0;t.breakStart=bse?bse.value:'';
+  if(toe&&toe.checked)t.offsite=true;else delete t.offsite;
   editingTplId=null;persist();renderTemplates();renderTplChips();toast('Template saved');
 }
 function deleteTpl(id){shiftTemplates=shiftTemplates.filter(function(t){return String(t.id)!==String(id);});editingTplId=null;persist();renderTemplates();renderTplChips();toast('Template removed');}
@@ -1760,7 +1765,7 @@ function exportBackup(){
   downloadBackupBlob(json,filename);
 }
 function downloadBackupBlob(json,filename){var blob=new Blob([json],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;a.click();toast('Backup downloaded');}
-function exportSpreadsheet(){var rows=[['Date','Day','Start','End','Total Hours','Break (min)','Break Start','Band','Band Hours','Rate (\u20ac/hr)','Pay (\u20ac)','Bank Holiday']];shifts.forEach(function(s){var d=new Date(s.date+'T12:00'),dayName=d.toLocaleDateString('en-IE',{weekday:'long'}),ds2=d.toLocaleDateString('en-IE',{day:'2-digit',month:'2-digit',year:'numeric'}),bh=s.bh?'Yes':'No',split=s.split||[],first=true;if(!split.length&&s.hm){for(var bid in s.hm){var bnd=getBand(bid);if(bnd)split.push({id:bid,name:bnd.name,hours:s.hm[bid]||0,amount:s.pm[bid]||0,rate:bnd.rate||0});}}if(!split.length){rows.push([ds2,dayName,s.start,s.end,(s.th||0).toFixed(2),s.breakMin||0,s.breakStart||'','','','',(s.tp||0).toFixed(2),bh]);return;}split.forEach(function(b){rows.push([first?ds2:'',first?dayName:'',first?s.start:'',first?s.end:'',first?(s.th||0).toFixed(2):'',first?s.breakMin||0:'',first?s.breakStart||'':'',b.name,b.hours.toFixed(2),(b.rate||0).toFixed(2),b.amount.toFixed(2),first?bh:'']);first=false;});});var csv=rows.map(function(r){return r.map(function(c){return'"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');var blob=new Blob([csv],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shiftpay-shifts-'+new Date().toISOString().split('T')[0]+'.csv';a.click();toast('Spreadsheet downloaded');}
+function exportSpreadsheet(){var rows=[['Date','Day','Start','End','Total Hours','Break (min)','Break Start','Band','Band Hours','Rate (\u20ac/hr)','Pay (\u20ac)','Bank Holiday','Off-site call','Call ins']];shifts.forEach(function(s){var d=new Date(s.date+'T12:00'),dayName=d.toLocaleDateString('en-IE',{weekday:'long'}),ds2=d.toLocaleDateString('en-IE',{day:'2-digit',month:'2-digit',year:'numeric'}),bh=s.bh?'Yes':'No',off=s.offsite?'Yes':'No',cis=(s.callIns||[]).map(function(ci){return ci.start+'-'+ci.end;}).join('; '),split=s.split||[],first=true;if(!split.length&&s.hm){for(var bid in s.hm){var bnd=getBand(bid);if(bnd)split.push({id:bid,name:bnd.name,hours:s.hm[bid]||0,amount:s.pm[bid]||0,rate:bnd.rate||0});}}if(!split.length){rows.push([ds2,dayName,s.start,s.end,(s.th||0).toFixed(2),s.breakMin||0,s.breakStart||'','','','',(s.tp||0).toFixed(2),bh,off,cis]);return;}split.forEach(function(b){rows.push([first?ds2:'',first?dayName:'',first?s.start:'',first?s.end:'',first?(s.th||0).toFixed(2):'',first?s.breakMin||0:'',first?s.breakStart||'':'',b.name,b.hours.toFixed(2),(b.rate||0).toFixed(2),b.amount.toFixed(2),first?bh:'',first?off:'',first?cis:'']);first=false;});});var csv=rows.map(function(r){return r.map(function(c){return'"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');var blob=new Blob([csv],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shiftpay-shifts-'+new Date().toISOString().split('T')[0]+'.csv';a.click();toast('Spreadsheet downloaded');}
 function importBackup(){document.getElementById('import-file').click();}
 function isValidBackup(data){
   if(!data||typeof data!=='object')return false;
@@ -1883,7 +1888,8 @@ function openDayModal(ds){
     var split=s.split||[];
     html+='<div style="border:1px solid var(--line);border-radius:var(--r-sm);padding:12px;margin-bottom:10px">';
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:14px;font-weight:700">'+(s.tplName||s.start+'–'+s.end)+'</div><div style="font-family:Fraunces,serif;font-size:18px;font-weight:600;color:var(--blue)">'+fmtEUR(s.tp||0)+'</div></div>';
-    html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.start+'–'+s.end+' &middot; '+(s.th||0).toFixed(1)+'h'+(s.breakMin?' &middot; '+s.breakMin+'min break':'')+'</div>';
+    html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.start+'–'+s.end+' &middot; '+(s.th||0).toFixed(1)+'h'+(s.breakMin?' &middot; '+s.breakMin+'min break':'')+(s.offsite?' &middot; on call':'')+'</div>';
+    if(s.offsite&&s.callIns&&s.callIns.length){html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.callIns.map(function(ci){return'Called in '+ci.start+' to '+ci.end;}).join(' &middot; ')+'</div>';}
     if(split.length){html+='<div style="display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line-soft);padding-top:6px">';split.forEach(function(b){html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line-soft)"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' · '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';});html+='</div>';}
     html+='<div style="display:flex;gap:8px;margin-top:10px"><button onclick="closeDayModal();startEdit('+s.id+')" style="flex:1;background:none;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;font-family:Geist,sans-serif;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer">Edit</button><button onclick="closeDayModal();delShift('+s.id+')" style="flex:1;background:none;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;font-family:Geist,sans-serif;font-size:13px;font-weight:600;color:var(--warn);cursor:pointer">Delete</button></div>';
     html+='</div>';
