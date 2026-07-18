@@ -503,7 +503,55 @@ function fmtEUR(n){return'\u20ac'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,'
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on');},2000);}
 
-function splitShift(date,start,end,bhDates,breakMin,breakStart,endsNextDay){
+function bandSite(b){return b&&b.site==='offsite'?'offsite':'onsite';}
+// Single source of truth for choosing the band that pays a 15-min slot.
+// BH pick falls through to day/time matching when the requested site has no BH band.
+function pickBandForSlot(dow,tod,slotIsBH,site){
+  var pick=null,i;
+  if(slotIsBH)for(i=0;i<bands.length;i++)if((bands[i].kind==='bh'||bands[i].locked==='bh')&&bandSite(bands[i])===site){pick=bands[i];break;}
+  if(!pick){
+    var matches=[];
+    for(i=0;i<bands.length;i++){
+      var b=bands[i];if(b.kind==='bh'||b.locked==='bh')continue;if(bandSite(b)!==site)continue;if((b.days||[]).indexOf(dow)===-1)continue;
+      var bs2=parseTime(b.start),be2=parseTime(b.end);if(bs2===null||be2===null)continue;
+      var inW;
+      if(b.end==='24:00')inW=tod>=bs2;
+      else if(be2>bs2)inW=tod>=bs2&&tod<be2;
+      else inW=tod>=bs2||tod<be2;
+      if(inW)matches.push(b);
+    }
+    matches.sort(function(a,bb){return(bb.rate||0)-(a.rate||0);});
+    pick=matches[0]||null;
+    if(!pick)for(i=0;i<bands.length;i++)if(bands[i].kind==='standard'&&bandSite(bands[i])===site){pick=bands[i];break;}
+  }
+  return pick;
+}
+// Normalize call-in segments to absolute-minute ranges within [s, s+totalMin].
+// Same wrap convention as breakStart: times before shift start belong to the next day.
+function normCallRanges(list,s,totalMin){
+  var out=[];
+  for(var i=0;i<(list||[]).length;i++){
+    var ci=list[i];if(!ci)continue;
+    var cs=parseTime(ci.start),ce=parseTime(ci.end);
+    if(cs===null&&ce===null)continue;
+    if(cs===null||ce===null)return{err:'Add both call in times.'};
+    if(cs<s)cs+=1440;
+    if(ce<=cs)ce+=1440;
+    if(cs>=s+totalMin||ce<=s)return{err:'Call in is outside the shift.'};
+    out.push([Math.max(cs,s),Math.min(ce,s+totalMin)]);
+  }
+  out.sort(function(a,b){return a[0]-b[0];});
+  for(var j=1;j<out.length;j++)if(out[j][0]<out[j-1][1])return{err:'Call in times overlap.'};
+  return{ranges:out};
+}
+function slotSite(callOpts,callRanges,abs){
+  if(!callOpts||!callOpts.offsite)return'onsite';
+  for(var i=0;i<callRanges.length;i++)if(abs>=callRanges[i][0]&&abs<callRanges[i][1])return'onsite';
+  return'offsite';
+}
+function callOptsForShift(s){return s&&s.offsite?{offsite:true,callIns:s.callIns||[]}:null;}
+
+function splitShift(date,start,end,bhDates,breakMin,breakStart,endsNextDay,callOpts){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return[];
   var nextDay=endsNextDay||e<=s;
@@ -513,29 +561,14 @@ function splitShift(date,start,end,bhDates,breakMin,breakStart,endsNextDay){
   var bs=parseTime(breakStart),breakRanges=[];
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var bhSet=(bhDates&&bhDates.length)?bhDates:[];
+  var cr=normCallRanges(callOpts&&callOpts.callIns,s,totalMin),callRanges=cr.ranges||[];
   var buckets={};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
     if(breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];}))continue;
     var slotDate=new Date(baseDate);slotDate.setDate(slotDate.getDate()+dayOffset);
     var slotIsBH=bhSet.indexOf(dateStr(slotDate))!==-1;
-    var pick=null;
-    if(slotIsBH)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
-    if(!pick){
-      var matches=[];
-      for(var i=0;i<bands.length;i++){
-        var b=bands[i];if(b.kind==='bh'||b.locked==='bh')continue;if((b.days||[]).indexOf(dow)===-1)continue;
-        var bs2=parseTime(b.start),be2=parseTime(b.end);if(bs2===null||be2===null)continue;
-        var inW;
-        if(b.end==='24:00')inW=tod>=bs2;
-        else if(be2>bs2)inW=tod>=bs2&&tod<be2;
-        else inW=tod>=bs2||tod<be2;
-        if(inW)matches.push(b);
-      }
-      matches.sort(function(a,bb){return(bb.rate||0)-(a.rate||0);});
-      pick=matches[0]||null;
-      if(!pick)for(var i=0;i<bands.length;i++)if(bands[i].kind==='standard'){pick=bands[i];break;}
-    }
+    var pick=pickBandForSlot(dow,tod,slotIsBH,slotSite(callOpts,callRanges,abs));
     if(!pick)continue;
     buckets[pick.id]=(buckets[pick.id]||0)+SLOT;
   }
@@ -545,7 +578,7 @@ function splitShift(date,start,end,bhDates,breakMin,breakStart,endsNextDay){
   return result;
 }
 // Split shift returning per-date buckets for overnight attribution
-function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay){
+function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay,callOpts){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return{};
   var nextDay=endsNextDay||e<=s;
@@ -555,6 +588,7 @@ function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay
   var bs=parseTime(breakStart),breakRanges=[];
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var bhSet=(bhDates&&bhDates.length)?bhDates:[];
+  var cr=normCallRanges(callOpts&&callOpts.callIns,s,totalMin),callRanges=cr.ranges||[];
   var byDate={};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
@@ -563,20 +597,7 @@ function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay
     var slotDateStr=dateStr(slotDate);
     var slotIsBH=bhSet.indexOf(slotDateStr)!==-1;
     if(!byDate[slotDateStr])byDate[slotDateStr]={};
-    var pick=null;
-    if(slotIsBH)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
-    if(!pick){
-      var matches=[];
-      for(var i=0;i<bands.length;i++){
-        var b=bands[i];if(b.kind==='bh'||b.locked==='bh')continue;if((b.days||[]).indexOf(dow)===-1)continue;
-        var bs2=parseTime(b.start),be2=parseTime(b.end);if(bs2===null||be2===null)continue;
-        var inW;if(b.end==='24:00')inW=tod>=bs2;else if(be2>bs2)inW=tod>=bs2&&tod<be2;else inW=tod>=bs2||tod<be2;
-        if(inW)matches.push(b);
-      }
-      matches.sort(function(a,bb){return(bb.rate||0)-(a.rate||0);});
-      pick=matches[0]||null;
-      if(!pick)for(var i=0;i<bands.length;i++)if(bands[i].kind==='standard'){pick=bands[i];break;}
-    }
+    var pick=pickBandForSlot(dow,tod,slotIsBH,slotSite(callOpts,callRanges,abs));
     if(!pick)continue;
     if(!byDate[slotDateStr][pick.id])byDate[slotDateStr][pick.id]=0;
     byDate[slotDateStr][pick.id]+=SLOT;
@@ -598,7 +619,7 @@ function recomputeDateSplit(s){if(s.start&&s.end&&(isOvernight(s.start,s.end)||s
 
 function shiftTotalHours(date,start,end,breakMin,endsNextDay){var s=parseTime(start),e=parseTime(end);if(s===null||e===null)return 0;var nextDay=endsNextDay||e<=s;var totalMin=(e-s)+(nextDay?1440:0);return(totalMin-breakMin)/60;}
 
-function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNextDay){
+function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNextDay,callOpts){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return'';
   var nextDay=endsNextDay||e<=s;
@@ -607,6 +628,7 @@ function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNe
   var bs=parseTime(breakStart),breakRanges=[];
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var bhSet=(bhDates&&bhDates.length)?bhDates:[];
+  var cr=normCallRanges(callOpts&&callOpts.callIns,s,totalMin),callRanges=cr.ranges||[];
   var crosses=nextDay,day1=[],day2=[];
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
@@ -616,20 +638,7 @@ function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNe
     else{
       var slotDate=new Date(baseDate);slotDate.setDate(slotDate.getDate()+dayOffset);
       var slotIsBH=bhSet.indexOf(dateStr(slotDate))!==-1;
-      var pick=null;
-      if(slotIsBH)for(var i=0;i<bands.length;i++)if(bands[i].kind==='bh'||bands[i].locked==='bh'){pick=bands[i];break;}
-      if(!pick){
-        var matches=[];
-        for(var i=0;i<bands.length;i++){
-          var b=bands[i];if(b.kind==='bh'||b.locked==='bh')continue;if((b.days||[]).indexOf(dow)===-1)continue;
-          var bs2=parseTime(b.start),be2=parseTime(b.end);if(bs2===null||be2===null)continue;
-          var inW;if(b.end==='24:00')inW=tod>=bs2;else if(be2>bs2)inW=tod>=bs2&&tod<be2;else inW=tod>=bs2||tod<be2;
-          if(inW)matches.push(b);
-        }
-        matches.sort(function(a,bb){return(bb.rate||0)-(a.rate||0);});
-        pick=matches[0]||null;
-        if(!pick)for(var i=0;i<bands.length;i++)if(bands[i].kind==='standard'){pick=bands[i];break;}
-      }
+      var pick=pickBandForSlot(dow,tod,slotIsBH,slotSite(callOpts,callRanges,abs));
       color=pick?pick.color:'#ccc';label=pick?pick.name:'\u2014';
     }
     var arr=dayOffset===0?day1:day2;arr.push({from:tod,to:tod+SLOT,color:color,label:label});
