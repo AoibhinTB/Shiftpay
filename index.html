@@ -1278,15 +1278,45 @@ function buildEditFormHTML(s){
   html+='<div class="edit-form" style="padding:16px 24px">';
   html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Date</label><input type="date" id="ed-date-'+s.id+'" value="'+s.date+'" onchange="refreshEditBK('+s.id+')"></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Start</label><input type="time" id="ed-start-'+s.id+'" value="'+s.start+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div><div class="field"><label class="lbl">End</label><input type="time" id="ed-end-'+s.id+'" value="'+s.end+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
-  html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Break</label><select id="ed-brk-'+s.id+'" onchange="refreshEditBK('+s.id+')"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">2 hours</option></select></div><div class="field"><label class="lbl">Break Start</label><input type="time" id="ed-brkst-'+s.id+'" value="'+(s.breakStart||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
+  html+='<div class="row-2" id="ed-brk-row-'+s.id+'" style="margin-bottom:10px'+(s._editOffsite?';display:none':'')+'"><div class="field"><label class="lbl">Break</label><select id="ed-brk-'+s.id+'" onchange="refreshEditBK('+s.id+')"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">2 hours</option></select></div><div class="field"><label class="lbl">Break Start</label><input type="time" id="ed-brkst-'+s.id+'" value="'+(s.breakStart||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
   var bhInit=(s.bhDates&&s.bhDates.length>0)||s.bh;
-  html+='<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(bhInit?'checked':'')+' onchange="onEditBHToggle('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-end1-'+s.id+'" '+(s.endsNextDay?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Ends next day</span></label></div>';
+  html+='<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(bhInit?'checked':'')+' onchange="onEditBHToggle('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-end1-'+s.id+'" '+(s.endsNextDay?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Ends next day</span></label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-off-'+s.id+'" '+(s._editOffsite?'checked':'')+' onchange="onEditOffsiteToggle('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Off-site call</span></label></div>';
   html+='<div id="ed-bh-days-'+s.id+'" style="display:none;margin:-2px 0 10px"><div class="lbl" style="margin-bottom:6px">Which day is BH?</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="day-pill" id="ed-bh-d1-'+s.id+'" onclick="onEditBHDay('+s.id+',1)"></button><button class="day-pill" id="ed-bh-d2-'+s.id+'" onclick="onEditBHDay('+s.id+',2)"></button></div></div>';
+  html+='<div id="ed-ci-'+s.id+'"></div>';
   html+='<div id="ed-bk-'+s.id+'"></div>';
   html+='<div style="padding:12px 24px 8px"><button class="btn-primary" onclick="saveEdit('+s.id+')">Save Changes</button></div>';
   html+='</div></div>';
-  setTimeout(function(){var brkEl=document.getElementById('ed-brk-'+s.id);if(brkEl)brkEl.value=String(s.breakMin||0);refreshEditBK(s.id);},0);
+  setTimeout(function(){var brkEl=document.getElementById('ed-brk-'+s.id);if(brkEl)brkEl.value=String(s.breakMin||0);renderEditCallIns(s.id);refreshEditBK(s.id);},0);
   return html;
+}
+function renderEditCallIns(id){
+  var el=document.getElementById('ed-ci-'+id);if(!el)return;
+  var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
+  if(!s||!s._editOffsite){el.innerHTML='';return;}
+  var list=s._editCallIns||[];
+  var html='<div style="margin:-2px 0 10px"><div class="lbl" style="margin-bottom:6px">Called in?</div>';
+  for(var j=0;j<list.length;j++){
+    html+='<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">';
+    html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">On site from</label><input type="time" value="'+esc(list[j].start||'')+'" onchange="updateEditCallIn('+id+','+j+',\'start\',this.value)" oninput="updateEditCallIn('+id+','+j+',\'start\',this.value)"></div>';
+    html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">Until</label><input type="time" value="'+esc(list[j].end||'')+'" onchange="updateEditCallIn('+id+','+j+',\'end\',this.value)" oninput="updateEditCallIn('+id+','+j+',\'end\',this.value)"></div>';
+    html+='<button onclick="removeEditCallIn('+id+','+j+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:20px;padding:10px 4px;line-height:1">&times;</button>';
+    html+='</div>';
+  }
+  html+='<button class="btn-ghost" onclick="addEditCallIn('+id+')">+ Add call in</button></div>';
+  el.innerHTML=html;
+}
+function addEditCallIn(id){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s)return;if(!s._editCallIns)s._editCallIns=[];s._editCallIns.push({start:'',end:''});renderEditCallIns(id);refreshEditBK(id);}
+function removeEditCallIn(id,idx){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s||!s._editCallIns)return;s._editCallIns.splice(idx,1);renderEditCallIns(id);refreshEditBK(id);}
+function updateEditCallIn(id,idx,f,v){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s||!s._editCallIns||!s._editCallIns[idx])return;s._editCallIns[idx][f]=v;refreshEditBK(id);}
+function onEditOffsiteToggle(id){
+  var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
+  if(!s)return;
+  var cb=document.getElementById('ed-off-'+id);
+  s._editOffsite=cb?cb.checked:false;
+  if(!s._editCallIns)s._editCallIns=[];
+  var brkRow=document.getElementById('ed-brk-row-'+id);if(brkRow)brkRow.style.display=s._editOffsite?'none':'';
+  if(s._editOffsite){var be=document.getElementById('ed-brk-'+id);if(be)be.value='0';var bse=document.getElementById('ed-brkst-'+id);if(bse)bse.value='';}
+  renderEditCallIns(id);refreshEditBK(id);
 }
 function startEdit(id){
   var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
@@ -1295,6 +1325,8 @@ function startEdit(id){
   var bhSrc=(s.bhDates&&s.bhDates.length)?s.bhDates:(s.bh?[s.date]:[]);
   s._editBHDay1=bhSrc.indexOf(s.date)!==-1||(s.bh&&!s.bhDates);
   s._editBHDay2=bhSrc.indexOf(nextDayStr(s.date))!==-1;
+  s._editOffsite=!!s.offsite;
+  s._editCallIns=(s.callIns||[]).map(function(ci){return{start:ci.start,end:ci.end};});
   var body=document.getElementById('edit-sheet-body');
   if(body)body.innerHTML=buildEditFormHTML(s);
   document.getElementById('edit-scrim').className='scrim open';
@@ -1318,6 +1350,7 @@ function onEditBHDay(id,n){
   refreshEditBK(id);
 }
 function cancelEdit(){
+  if(editingShiftId!==null)for(var i=0;i<shifts.length;i++)if(shifts[i].id===editingShiftId){var s=shifts[i];delete s._editBHDay1;delete s._editBHDay2;delete s._editOffsite;delete s._editCallIns;break;}
   editingShiftId=null;
   document.getElementById('edit-scrim').className='scrim';
   document.getElementById('edit-sheet').className='sheet';
@@ -1350,7 +1383,18 @@ function refreshEditBK(id){
     if(!spans){bhDates.push(date);}
     else if(s){if(s._editBHDay1)bhDates.push(date);if(s._editBHDay2)bhDates.push(nextDayStr(date));}
   }
-  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende);
+  var callOpts=null;
+  if(s&&s._editOffsite){
+    breakMin=0;breakStart='';
+    var sMin=parseTime(start),eMin=parseTime(end);
+    if(sMin!==null&&eMin!==null){
+      var totMin=(eMin-sMin)+(spans?1440:0);
+      var cres=normCallRanges(s._editCallIns||[],sMin,totMin);
+      if(cres.err){bkEl.innerHTML='<div style="padding:8px 0;border-top:1px solid var(--line-soft);font-size:12.5px;color:var(--warn)">'+esc(cres.err)+'</div>';return;}
+    }
+    callOpts={offsite:true,callIns:s._editCallIns||[]};
+  }
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var html='<div style="padding:8px 0;border-top:1px solid var(--line-soft)">';
   for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';}
@@ -1374,11 +1418,21 @@ function saveEdit(id){
     if(!spans){bhDates.push(date);}
     else{if(s._editBHDay1)bhDates.push(date);if(s._editBHDay2)bhDates.push(nextDayStr(date));}
   }
-  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende);
+  var offsite=!!s._editOffsite,callOpts=null,cleanCIs=[];
+  if(offsite){
+    breakMin=0;breakStart='';
+    var sMin=parseTime(start),eMin=parseTime(end);
+    var totMin=(eMin-sMin)+(spans?1440:0);
+    if(normCallRanges(s._editCallIns||[],sMin,totMin).err)return;
+    cleanCIs=(s._editCallIns||[]).filter(function(ci){return validTime(ci.start)&&validTime(ci.end);}).map(function(ci){return{start:ci.start,end:ci.end};});
+    callOpts={offsite:true,callIns:cleanCIs};
+  }
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts);
   var totalH=shiftTotalHours(date,start,end,breakMin,ende),totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
   Object.assign(s,{date:date,start:start,end:end,bh:bhDates.length>0,bhDates:bhDates,endsNextDay:ende,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands))});
-  delete s._editBHDay1;delete s._editBHDay2;
+  if(offsite){s.offsite=true;s.callIns=cleanCIs;}else{delete s.offsite;delete s.callIns;}
+  delete s._editBHDay1;delete s._editBHDay2;delete s._editOffsite;delete s._editCallIns;
   recomputeDateSplit(s);
   persist();toast('Shift updated');cancelEdit();renderSummary();
 }
