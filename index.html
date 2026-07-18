@@ -615,7 +615,7 @@ function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay
   return result;
 }
 
-function recomputeDateSplit(s){if(s.start&&s.end&&(isOvernight(s.start,s.end)||s.endsNextDay))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false);else delete s.dateSplit;}
+function recomputeDateSplit(s){if(s.start&&s.end&&(isOvernight(s.start,s.end)||s.endsNextDay))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false,callOptsForShift(s));else delete s.dateSplit;}
 
 function shiftTotalHours(date,start,end,breakMin,endsNextDay){var s=parseTime(start),e=parseTime(end);if(s===null||e===null)return 0;var nextDay=endsNextDay||e<=s;var totalMin=(e-s)+(nextDay?1440:0);return(totalMin-breakMin)/60;}
 
@@ -1409,7 +1409,7 @@ function shiftUsesBand(s,bandId){
   return false;
 }
 function recomputeShiftFromBands(s){
-  var newSplit=splitShift(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false);
+  var newSplit=splitShift(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false,callOptsForShift(s));
   s.split=newSplit;s.hm={};s.pm={};
   newSplit.forEach(function(b){s.hm[b.id]=b.hours;s.pm[b.id]=b.amount;});
   s.th=newSplit.reduce(function(t,b){return t+b.hours;},0);
@@ -1786,7 +1786,11 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
     {id:'base',name:'Standard',color:'#2563eb',rate:30,days:[0,1,2,3,4],start:'09:00',end:'17:00',slip:0,kind:'standard'},
     {id:'night',name:'Night',color:'#7c3aed',rate:40,days:[0,1,2,3,4,5,6],start:'20:00',end:'08:00',slip:1,kind:'premium'},
     {id:'sat',name:'Saturday',color:'#0d9488',rate:45,days:[5],start:'08:00',end:'20:00',slip:1,kind:'premium'},
-    {id:'sun',name:'Sunday',color:'#dc2626',rate:50,days:[6],start:'00:00',end:'24:00',slip:1,kind:'premium'}
+    {id:'sun',name:'Sunday',color:'#dc2626',rate:50,days:[6],start:'00:00',end:'24:00',slip:1,kind:'premium'},
+    {id:'oc_wk',name:'Call weekday',color:'#0891b2',rate:12,days:[0,1,2,3,4],start:'00:00',end:'24:00',slip:0,kind:'standard',site:'offsite'},
+    {id:'oc_sat',name:'Call Saturday',color:'#059669',rate:15,days:[5],start:'00:00',end:'24:00',slip:1,kind:'premium',site:'offsite'},
+    {id:'oc_sun',name:'Call Sunday',color:'#f59e0b',rate:18,days:[6],start:'00:00',end:'24:00',slip:1,kind:'premium',site:'offsite'},
+    {id:'oc_bh',name:'Call bank holiday',color:'#d97706',rate:20,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh',site:'offsite'}
   ];
 
   // Scenarios: expected values computed by hand from the 15-min slot algorithm.
@@ -1837,7 +1841,27 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
     { id:'P5', desc:'Monthly, Night slip=1 + user defer +1 for Jul 2026 → effective +2 → Sept',
       inputs:{date:'2026-07-17',start:'22:00',end:'23:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false},
       settings:{periodType:'monthly',periodDefers:{202606:1}},
-      expected:{totalHours:1,gross:40,byBand:{Night:{hours:1,amount:40}},payslipRouting:{202608:40}} }
+      expected:{totalHours:1,gross:40,byBand:{Night:{hours:1,amount:40}},payslipRouting:{202608:40}} },
+
+    { id:'OC1', desc:'Off-site call Wed 18:00-08:00, never called in → 14h Call weekday',
+      inputs:{date:'2026-07-15',start:'18:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[]}},
+      expected:{totalHours:14,gross:168,byBand:{'Call weekday':{hours:14,amount:168}}} },
+    { id:'OC2', desc:'Off-site call Wed 18:00-08:00, called in 22:00-01:00 → 3h Night + 11h Call weekday',
+      inputs:{date:'2026-07-15',start:'18:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[{start:'22:00',end:'01:00'}]}},
+      expected:{totalHours:14,gross:252,byBand:{Night:{hours:3,amount:120},'Call weekday':{hours:11,amount:132}}} },
+    { id:'OC3', desc:'Off-site call Sat 20:00-08:00, called in 23:00-02:00 crossing into Sunday → mixed sites and days, weekly routing',
+      inputs:{date:'2026-07-18',start:'20:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[{start:'23:00',end:'02:00'}]}},
+      settings:{periodType:'weekly',periodDefers:{}},
+      expected:{totalHours:12,gross:293,byBand:{Night:{hours:1,amount:40},Sunday:{hours:2,amount:100},'Call Saturday':{hours:3,amount:45},'Call Sunday':{hours:6,amount:108}},payslipRouting:{20260720:293}} },
+    { id:'OC4', desc:'Off-site call Wed(BH) 18:00-08:00, called in 22:00-01:00 → off-site BH + on-site BH + Night + Call weekday',
+      inputs:{date:'2026-07-15',start:'18:00',end:'08:00',bhDates:['2026-07-15'],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[{start:'22:00',end:'01:00'}]}},
+      expected:{totalHours:14,gross:324,byBand:{'Call bank holiday':{hours:4,amount:80},'Bank Holiday':{hours:2,amount:120},Night:{hours:1,amount:40},'Call weekday':{hours:7,amount:84}}} },
+    { id:'OC5', desc:'Off-site call Wed 18:00-08:00, called in twice (20:00-21:00, 03:00-05:00)',
+      inputs:{date:'2026-07-15',start:'18:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[{start:'20:00',end:'21:00'},{start:'03:00',end:'05:00'}]}},
+      expected:{totalHours:14,gross:252,byBand:{Night:{hours:3,amount:120},'Call weekday':{hours:11,amount:132}}} },
+    { id:'OC6', desc:'Off-site call 20:00-08:00 but called in for the entire span → identical to O1',
+      inputs:{date:'2026-07-15',start:'20:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[{start:'20:00',end:'08:00'}]}},
+      expected:{totalHours:12,gross:480,byBand:{Night:{hours:12,amount:480}}} }
   ];
 
   function round(o){
@@ -1856,7 +1880,7 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
 
     var i=sc.inputs;
     var actualHours=shiftTotalHours(i.date,i.start,i.end,i.breakMin,i.endsNextDay);
-    var split=splitShift(i.date,i.start,i.end,i.bhDates,i.breakMin,i.breakStart,i.endsNextDay);
+    var split=splitShift(i.date,i.start,i.end,i.bhDates,i.breakMin,i.breakStart,i.endsNextDay,i.callOpts);
     var byBand={};
     split.forEach(function(b){byBand[b.name]={hours:b.hours,amount:b.amount};});
     var gross=split.reduce(function(t,b){return t+b.amount;},0);
@@ -1865,7 +1889,7 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
     if(sc.expected.payslipRouting){
       var routing={};
       if(isOvernight(i.start,i.end)||i.endsNextDay){
-        var byDate=splitShiftByDate(i.date,i.start,i.end,i.bhDates,i.breakMin,i.breakStart,i.endsNextDay);
+        var byDate=splitShiftByDate(i.date,i.start,i.end,i.bhDates,i.breakMin,i.breakStart,i.endsNextDay,i.callOpts);
         Object.keys(byDate).forEach(function(ds){
           var earnedPk=getPeriodKey(ds);
           byDate[ds].forEach(function(b){
@@ -1900,7 +1924,7 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
     var h='<div style="font-family:system-ui,sans-serif;padding:24px;max-width:1200px;margin:0 auto;background:#f9fafb;min-height:100vh">';
     h+='<h1 style="margin:0 0 8px;font-size:22px">Shiftpay calc test suite</h1>';
     h+='<div style="font-size:32px;font-weight:700;color:'+headerColor+';margin-bottom:8px">'+passN+' / '+totalN+' passing</div>';
-    h+='<div style="font-size:13px;color:#666;margin-bottom:20px">Seeded rates — BH €60, Standard €30, Night €40, Saturday €45, Sunday €50. Reload without <code>?test=1</code> to use the app normally.</div>';
+    h+='<div style="font-size:13px;color:#666;margin-bottom:20px">Seeded rates: BH €60, Standard €30, Night €40, Saturday €45, Sunday €50, Call weekday €12, Call Saturday €15, Call Sunday €18, Call BH €20. Reload without <code>?test=1</code> to use the app normally.</div>';
     h+='<table style="width:100%;border-collapse:collapse;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);border-radius:6px;overflow:hidden">';
     h+='<thead><tr style="background:#1f2937;color:#fff"><th style="text-align:left;padding:10px 12px;font-size:12px">ID</th><th style="text-align:left;padding:10px 12px;font-size:12px">Scenario</th><th style="text-align:left;padding:10px 12px;font-size:12px">Expected</th><th style="text-align:left;padding:10px 12px;font-size:12px">Actual</th><th style="text-align:center;padding:10px 12px;font-size:12px;width:60px">Result</th></tr></thead><tbody>';
     results.forEach(function(r){
