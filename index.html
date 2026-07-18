@@ -454,6 +454,14 @@ function loadDefaultBands(){
     {id:'night',name:'Night',color:'#7c3aed',rate:0,days:[0,1,2,3,4,5,6],start:'20:00',end:'08:00',slip:1,kind:'premium'},
     {id:'sat',name:'Saturday',color:'#0d9488',rate:0,days:[5],start:'08:00',end:'20:00',slip:1,kind:'premium'},
     {id:'sun',name:'Sunday',color:'#dc2626',rate:0,days:[6],start:'00:00',end:'24:00',slip:1,kind:'premium'}
+  ].concat(defaultOffsiteBands());
+}
+function defaultOffsiteBands(){
+  return[
+    {id:'oc_wk',name:'Call weekday',color:'#0891b2',rate:0,days:[0,1,2,3,4],start:'00:00',end:'24:00',slip:0,kind:'standard',site:'offsite'},
+    {id:'oc_sat',name:'Call Saturday',color:'#059669',rate:0,days:[5],start:'00:00',end:'24:00',slip:1,kind:'premium',site:'offsite'},
+    {id:'oc_sun',name:'Call Sunday',color:'#f59e0b',rate:0,days:[6],start:'00:00',end:'24:00',slip:1,kind:'premium',site:'offsite'},
+    {id:'oc_bh',name:'Call bank holiday',color:'#d97706',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh',site:'offsite'}
   ];
 }
 function loadDefaultTemplates(){
@@ -477,20 +485,31 @@ function ensureDefaultBands(){
     // Map arrears to slip
     if(b.slip===undefined&&b.arrears!==undefined)b.slip=b.arrears;
   });
-  // Deduplicate BH and Standard bands (keep one with highest rate)
-  var bhBands=bands.filter(function(b){return b.kind==='bh';});
-  var stdBands=bands.filter(function(b){return b.kind==='standard';});
-  var otherBands=bands.filter(function(b){return b.kind!=='bh'&&b.kind!=='standard';});
+  // Deduplicate BH and Standard bands per site (keep one with highest rate).
+  // Partitioning by site is load-bearing: a site-blind dedupe would silently
+  // delete the off-site standard/BH bands on every load.
   function best(arr){if(!arr.length)return null;return arr.slice().sort(function(a,b){return(b.rate||0)-(a.rate||0);})[0];}
-  var bestBH=best(bhBands)||{id:'bh',name:'Bank Holiday',color:'#d97706',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh'};
-  // Only BH is mandatory - Standard is optional
-  if(stdBands.length>1){
-    // Deduplicate Standards if there are duplicates, keep best
-    var bestStd=best(stdBands);
-    bands=[bestBH,bestStd].concat(otherBands);
-  } else {
-    bands=[bestBH].concat(stdBands).concat(otherBands);
+  function regroup(list,mandatoryBH){
+    var bh=list.filter(function(b){return b.kind==='bh';});
+    var std=list.filter(function(b){return b.kind==='standard';});
+    var other=list.filter(function(b){return b.kind!=='bh'&&b.kind!=='standard';});
+    var out=[];
+    var bestBH=best(bh)||(mandatoryBH?{id:'bh',name:'Bank Holiday',color:'#d97706',rate:0,days:[0,1,2,3,4,5,6],start:'00:00',end:'24:00',slip:2,kind:'bh'}:null);
+    if(bestBH)out.push(bestBH);
+    if(std.length>1)out.push(best(std));else out=out.concat(std);
+    return out.concat(other);
   }
+  var onsiteBands=bands.filter(function(b){return bandSite(b)!=='offsite';});
+  var offsiteBands=bands.filter(function(b){return bandSite(b)==='offsite';});
+  bands=regroup(onsiteBands,true).concat(regroup(offsiteBands,false));
+  // Seed off-site call rate defaults once for installs that predate them.
+  // The flag keeps deliberately deleted call bands from coming back.
+  if(!offsiteBands.length){
+    var seeded='1';
+    try{seeded=localStorage.getItem('shiftpay.offsiteSeeded')||'';}catch(e){}
+    if(seeded!=='1')bands=bands.concat(defaultOffsiteBands());
+  }
+  try{localStorage.setItem('shiftpay.offsiteSeeded','1');}catch(e){}
 }
 function getBand(id){for(var i=0;i<bands.length;i++)if(String(bands[i].id)===String(id))return bands[i];return null;}
 function parseTime(s){if(!s||s.length<4)return null;var p=s.split(':'),h=parseInt(p[0],10),m=parseInt(p[1],10);return(isNaN(h)||isNaN(m))?null:h*60+m;}
