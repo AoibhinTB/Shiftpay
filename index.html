@@ -1365,8 +1365,9 @@ function renderBands(){
   var el=document.getElementById('band-list');if(!el)return;
   var sorted=bands.slice().sort(function(a,b){return(b.rate||0)-(a.rate||0);});
   var html='';
-  for(var i=0;i<sorted.length;i++){
-    var b=sorted[i],isBH=b.kind==='bh'||b.locked==='bh',isStd=b.kind==='standard'||b.locked==='base',open=String(openBandId)===String(b.id);var bDays=b.days||[];var bSlip=b.slip!==undefined?b.slip:(b.arrears||0);
+  function bandCardHTML(b){
+    var isBH=b.kind==='bh'||b.locked==='bh',isStd=b.kind==='standard'||b.locked==='base',open=String(openBandId)===String(b.id);var bDays=b.days||[];var bSlip=b.slip!==undefined?b.slip:(b.arrears||0);
+    var html='';
     var rateStr=b.rate>0?('\u20ac'+b.rate.toFixed(2)+'/h'):'Rate not set',rateClr=b.rate>0?b.color:'var(--muted-2)';
     html+='<div class="band-card" id="bc-'+esc(String(b.id))+'" style="border-left:3px solid '+b.color+'">';
     html+='<div class="band-head" onclick="toggleBand(\''+esc(String(b.id))+'\')">';
@@ -1389,13 +1390,22 @@ function renderBands(){
       }
       html+='<div class="row-2" style="margin-bottom:12px"><div class="field"><label class="lbl">Hourly rate</label><div style="position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--muted)">\u20ac</span><input type="number" value="'+(b.rate||'')+'" placeholder="0.00" step="0.01" min="0" style="padding-left:26px" onchange="updateBandRate(\''+esc(String(b.id))+'\',this.value)" oninput="updateBandRate(\''+esc(String(b.id))+'\',this.value)"></div></div><div class="field"><label class="lbl">Payslip</label><select onchange="updateBandSlip(\''+esc(String(b.id))+'\',this.value)"><option value="0"'+(b.slip===0?' selected':'')+'>Same payslip</option><option value="1"'+(b.slip===1?' selected':'')+'>Next payslip</option><option value="2"'+(b.slip===2?' selected':'')+'>2 payslips later</option></select></div></div>';
       html+='<div class="band-actions"><button class="btn-primary" style="margin-top:0" onclick="saveBand(\''+esc(String(b.id))+'\')">Save</button>';
-      if(!isBH&&!isStd){
+      if((!isBH&&!isStd)||bandSite(b)==='offsite'){
         html+='<button class="btn-ghost btn-warn" onclick="deleteBandNow(\''+esc(String(b.id))+'\')">Delete band</button>';
       }
       html+='</div></div>';
     }
     html+='</div>';
+    return html;
   }
+  var onsite=sorted.filter(function(b){return bandSite(b)!=='offsite';});
+  var offsite=sorted.filter(function(b){return bandSite(b)==='offsite';});
+  for(var i=0;i<onsite.length;i++)html+=bandCardHTML(onsite[i]);
+  html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin:20px 0 10px">';
+  html+='<div><div style="font-size:15px;font-weight:700;font-family:Fraunces,serif">Off-site call rates</div><div class="tiny" style="margin-top:2px">Rates while on call from home. Time worked after a call in uses your normal rates above.</div></div>';
+  html+='<button class="btn-ghost" style="flex-shrink:0" onclick="addBand(\'offsite\')">+ Add</button></div>';
+  if(!offsite.length)html+='<div class="tiny" style="padding:4px 0 12px">No call rates set up. Add one to use the off-site call toggle when logging.</div>';
+  for(var j=0;j<offsite.length;j++)html+=bandCardHTML(offsite[j]);
   el.innerHTML=html;
 }
 function revertBandEdit(){
@@ -1417,7 +1427,7 @@ function toggleBand(id){
   else{
     openBandId=id;
     var b=getBand(id);
-    bandEditSnapshot=b?{id:id,rate:b.rate||0,slip:b.slip||0,days:JSON.stringify((b.days||[]).slice().sort()),start:b.start||'',end:b.end||'',name:b.name||''}:null;
+    bandEditSnapshot=b?{id:id,rate:b.rate||0,slip:b.slip||0,days:JSON.stringify((b.days||[]).slice().sort()),start:b.start||'',end:b.end||'',name:b.name||'',site:bandSite(b)}:null;
   }
   confirmDeleteBandId=null;renderBands();
 }
@@ -1461,7 +1471,7 @@ function updateBandField(id,f,v){var b=getBand(id);if(b)b[f]=v;}
 function updateBandRate(id,v){var b=getBand(id);if(b)b.rate=parseFloat(v)||0;}
 function updateBandSlip(id,v){var b=getBand(id);if(b){b.slip=parseInt(v)||0;b.arrears=b.slip;}}
 function toggleDay(id,d){var b=getBand(id);if(!b)return;if(!b.days)b.days=[];var i=b.days.indexOf(d);i===-1?b.days.push(d):b.days.splice(i,1);renderBands();}
-function addBand(){if(bandEditSnapshot)revertBandEdit();var color=PALETTE[bands.length%PALETTE.length],newId='band_'+Date.now();bands.push({id:newId,name:'New Band',color:color,rate:0,days:[],start:'09:00',end:'17:00',slip:0,kind:'premium'});openBandId=newId;persist();renderBands();}
+function addBand(site){if(bandEditSnapshot)revertBandEdit();var color=PALETTE[bands.length%PALETTE.length],newId='band_'+Date.now();var nb={id:newId,name:site==='offsite'?'New call band':'New Band',color:color,rate:0,days:[],start:site==='offsite'?'00:00':'09:00',end:site==='offsite'?'24:00':'17:00',slip:0,kind:'premium'};if(site==='offsite')nb.site='offsite';bands.push(nb);openBandId=newId;persist();renderBands();}
 function saveBand(id){
   var b=getBand(id);
   var needBackfill=false;
