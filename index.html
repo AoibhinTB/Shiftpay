@@ -296,7 +296,14 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
             <button class="toggle" id="l-offsite-toggle" onclick="toggleOffsite()"></button>
           </div>
           <div id="l-callins" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
-            <div class="lbl" style="margin-bottom:8px">Time worked on site</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div style="font-size:12.5px;font-weight:500">Worked on site before call started</div>
+              <button class="toggle" id="l-precall-toggle" onclick="togglePreCall()" style="transform:scale(0.78);transform-origin:right center"></button>
+            </div>
+            <div id="l-precall-row" style="display:none;margin-bottom:10px">
+              <div class="field"><label class="lbl" style="font-size:9.5px">On call from</label><input type="text" id="l-callfrom" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()"></div>
+            </div>
+            <div class="lbl" style="margin-bottom:8px">Called in?</div>
             <div id="l-callin-rows"></div>
             <button class="btn-ghost" onclick="addCallIn()">+ Add call in</button>
           </div>
@@ -439,7 +446,7 @@ var onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null,bandEditSnapshot=null,pendingBackfill=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='',historyGroupMode='shifts';
 var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
-var logOffsite=false,logCallIns=[];
+var logOffsite=false,logCallIns=[],logPreCall=false;
 
 function persist(){try{localStorage.setItem('shiftpay.bands',JSON.stringify(bands));localStorage.setItem('shiftpay.shifts',JSON.stringify(shifts));localStorage.setItem('shiftpay.templates',JSON.stringify(shiftTemplates));localStorage.setItem('shiftpay.manuals',JSON.stringify(manualEntries));localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}catch(e){}}
 function loadData(){
@@ -802,20 +809,40 @@ function setLogOffsite(on){
   var ciBlock=document.getElementById('l-callins');if(ciBlock)ciBlock.style.display=logOffsite?'block':'none';
   var brkCard=document.getElementById('l-break-card');if(brkCard)brkCard.style.display=logOffsite?'none':'block';
   if(logOffsite){var bd=document.getElementById('l-break-dur');if(bd)bd.value='0';var bs=document.getElementById('l-break-start');if(bs)bs.value='';}
+  logPreCall=false;
+  var pt=document.getElementById('l-precall-toggle');if(pt)pt.className='toggle';
+  var pr=document.getElementById('l-precall-row');if(pr)pr.style.display='none';
+  var cf=document.getElementById('l-callfrom');if(cf)cf.value='';
   renderCallIns();
 }
 function toggleOffsite(){setLogOffsite(!logOffsite);refreshLog();}
+function togglePreCall(){
+  logPreCall=!logPreCall;
+  var b=document.getElementById('l-precall-toggle');if(b)b.className='toggle'+(logPreCall?' on':'');
+  var r=document.getElementById('l-precall-row');if(r)r.style.display=logPreCall?'block':'none';
+  if(!logPreCall){var cf=document.getElementById('l-callfrom');if(cf)cf.value='';}
+  refreshLog();
+}
+// Effective on-site segments: the pre-call worked stretch (shift start to
+// "on call from") is just a leading segment, so the engine stays unchanged.
+function logEffCallIns(start){
+  if(!logPreCall)return{list:logCallIns};
+  var cfEl=document.getElementById('l-callfrom'),cf=cfEl?cfEl.value:'';
+  if(!validTime(cf))return{err:'Add the time your call started.'};
+  if(parseTime(cf)===parseTime(start))return{err:'On call from matches the shift start.'};
+  return{list:[{start:start,end:cf}].concat(logCallIns)};
+}
 function addCallIn(){logCallIns.push({start:'',end:''});renderCallIns();refreshLog();}
 function removeCallIn(i){logCallIns.splice(i,1);renderCallIns();refreshLog();}
 function updateCallIn(i,f,v){if(logCallIns[i]){logCallIns[i][f]=v;refreshLog();}}
 function renderCallIns(){
   var el=document.getElementById('l-callin-rows');if(!el)return;
   var html='';
-  if(!logCallIns.length)html+='<div class="tiny" style="margin-bottom:8px">Add any time you worked on site during this shift, whether a normal day before call started or a call in. It pays your normal rates.</div>';
+  if(!logCallIns.length)html+='<div class="tiny" style="margin-bottom:8px">If you were called in to work, add those times. They pay your normal rates.</div>';
   for(var i=0;i<logCallIns.length;i++){
     var ci=logCallIns[i];
     html+='<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">';
-    html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">On site from</label><input type="text" placeholder="--:--" inputmode="numeric" maxlength="5" value="'+esc(ci.start||'')+'" oninput="fmtTimeInput(this);updateCallIn('+i+',\'start\',this.value)" onchange="updateCallIn('+i+',\'start\',this.value)"></div>';
+    html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">From</label><input type="text" placeholder="--:--" inputmode="numeric" maxlength="5" value="'+esc(ci.start||'')+'" oninput="fmtTimeInput(this);updateCallIn('+i+',\'start\',this.value)" onchange="updateCallIn('+i+',\'start\',this.value)"></div>';
     html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">Until</label><input type="text" placeholder="--:--" inputmode="numeric" maxlength="5" value="'+esc(ci.end||'')+'" oninput="fmtTimeInput(this);updateCallIn('+i+',\'end\',this.value)" onchange="updateCallIn('+i+',\'end\',this.value)"></div>';
     html+='<button onclick="removeCallIn('+i+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:20px;padding:10px 4px;line-height:1">&times;</button>';
     html+='</div>';
@@ -862,7 +889,8 @@ function refreshLog(){
   if(logOffsite){
     var sMin=parseTime(start),eMin=parseTime(end);
     shiftTotMin=(eMin-sMin)+((logEndsNextDay||eMin<=sMin)?1440:0);
-    var cres=normCallRanges(logCallIns,sMin,shiftTotMin);
+    var eff=logEffCallIns(start);
+    var cres=eff.err?{err:eff.err}:normCallRanges(eff.list,sMin,shiftTotMin);
     if(cres.err){
       if(bkEl)bkEl.innerHTML='<div class="bk-card"><div style="font-size:13px;color:var(--warn)">'+esc(cres.err)+'</div></div>';
       if(saveBtn)saveBtn.style.display='none';
@@ -870,7 +898,7 @@ function refreshLog(){
     }
     callRanges=cres.ranges;
     for(var ri=0;ri<callRanges.length;ri++)onsiteMin+=callRanges[ri][1]-callRanges[ri][0];
-    callOpts={offsite:true,callIns:logCallIns};
+    callOpts={offsite:true,callIns:eff.list};
   }
   var tierBase=(callOpts&&tiersOn())?tierCtxBefore(date,start,null):null;
   var split=splitShift(date,start,end,bhDates,breakMin,breakStart,logEndsNextDay,callOpts,tierBase?JSON.parse(JSON.stringify(tierBase)):undefined);
@@ -909,8 +937,9 @@ function addShift(){
   if(logOffsite){
     var sMin=parseTime(start),eMin=parseTime(end);
     var totMin=(eMin-sMin)+((logEndsNextDay||eMin<=sMin)?1440:0);
-    if(normCallRanges(logCallIns,sMin,totMin).err)return;
-    cleanCIs=logCallIns.filter(function(ci){return validTime(ci.start)&&validTime(ci.end);}).map(function(ci){return{start:ci.start,end:ci.end};});
+    var eff=logEffCallIns(start);
+    if(eff.err||normCallRanges(eff.list,sMin,totMin).err)return;
+    cleanCIs=eff.list.filter(function(ci){return validTime(ci.start)&&validTime(ci.end);}).map(function(ci){return{start:ci.start,end:ci.end};});
     callOpts={offsite:true,callIns:cleanCIs};
   }
   var split=splitShift(date,start,end,bhDates,breakMin,breakStart,logEndsNextDay,callOpts,(callOpts&&tiersOn())?tierCtxBefore(date,start,null):undefined);
@@ -1355,10 +1384,13 @@ function renderEditCallIns(id){
   var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
   if(!s||!s._editOffsite){el.innerHTML='';return;}
   var list=s._editCallIns||[];
-  var html='<div style="margin:-2px 0 10px"><div class="lbl" style="margin-bottom:6px">Time worked on site</div>';
+  var html='<div style="margin:-2px 0 10px">';
+  html+='<label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:8px"><input type="checkbox" '+(s._editPreCall?'checked':'')+' onchange="onEditPreCallToggle('+id+',this.checked)" style="accent-color:var(--blue)"><span style="font-size:13px">Worked on site before call started</span></label>';
+  if(s._editPreCall)html+='<div class="field" style="margin-bottom:10px"><label class="lbl" style="font-size:9.5px">On call from</label><input type="time" value="'+esc(s._editCallFrom||'')+'" onchange="updateEditCallFrom('+id+',this.value)" oninput="updateEditCallFrom('+id+',this.value)"></div>';
+  html+='<div class="lbl" style="margin-bottom:6px">Called in?</div>';
   for(var j=0;j<list.length;j++){
     html+='<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">';
-    html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">On site from</label><input type="time" value="'+esc(list[j].start||'')+'" onchange="updateEditCallIn('+id+','+j+',\'start\',this.value)" oninput="updateEditCallIn('+id+','+j+',\'start\',this.value)"></div>';
+    html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">From</label><input type="time" value="'+esc(list[j].start||'')+'" onchange="updateEditCallIn('+id+','+j+',\'start\',this.value)" oninput="updateEditCallIn('+id+','+j+',\'start\',this.value)"></div>';
     html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">Until</label><input type="time" value="'+esc(list[j].end||'')+'" onchange="updateEditCallIn('+id+','+j+',\'end\',this.value)" oninput="updateEditCallIn('+id+','+j+',\'end\',this.value)"></div>';
     html+='<button onclick="removeEditCallIn('+id+','+j+')" style="background:none;border:none;cursor:pointer;color:var(--muted-2);font-size:20px;padding:10px 4px;line-height:1">&times;</button>';
     html+='</div>';
@@ -1369,6 +1401,14 @@ function renderEditCallIns(id){
 function addEditCallIn(id){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s)return;if(!s._editCallIns)s._editCallIns=[];s._editCallIns.push({start:'',end:''});renderEditCallIns(id);refreshEditBK(id);}
 function removeEditCallIn(id,idx){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s||!s._editCallIns)return;s._editCallIns.splice(idx,1);renderEditCallIns(id);refreshEditBK(id);}
 function updateEditCallIn(id,idx,f,v){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s||!s._editCallIns||!s._editCallIns[idx])return;s._editCallIns[idx][f]=v;refreshEditBK(id);}
+function onEditPreCallToggle(id,on){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s)return;s._editPreCall=!!on;if(!on)s._editCallFrom='';renderEditCallIns(id);refreshEditBK(id);}
+function updateEditCallFrom(id,v){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s)return;s._editCallFrom=v;refreshEditBK(id);}
+function editEffCallIns(s,start){
+  if(!s._editPreCall)return{list:(s._editCallIns||[]).slice()};
+  if(!validTime(s._editCallFrom))return{err:'Add the time your call started.'};
+  if(parseTime(s._editCallFrom)===parseTime(start))return{err:'On call from matches the shift start.'};
+  return{list:[{start:start,end:s._editCallFrom}].concat(s._editCallIns||[])};
+}
 function onEditOffsiteToggle(id){
   var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
   if(!s)return;
@@ -1387,7 +1427,10 @@ function startEdit(id){
   s._editBHDay1=bhSrc.indexOf(s.date)!==-1||(s.bh&&!s.bhDates);
   s._editBHDay2=bhSrc.indexOf(nextDayStr(s.date))!==-1;
   s._editOffsite=!!s.offsite;
-  s._editCallIns=(s.callIns||[]).map(function(ci){return{start:ci.start,end:ci.end};});
+  var editCIs=(s.callIns||[]).map(function(ci){return{start:ci.start,end:ci.end};});
+  s._editPreCall=false;s._editCallFrom='';
+  for(var pci=0;pci<editCIs.length;pci++)if(editCIs[pci].start===s.start){s._editPreCall=true;s._editCallFrom=editCIs[pci].end;editCIs.splice(pci,1);break;}
+  s._editCallIns=editCIs;
   var body=document.getElementById('edit-sheet-body');
   if(body)body.innerHTML=buildEditFormHTML(s);
   document.getElementById('edit-scrim').className='scrim open';
@@ -1411,7 +1454,7 @@ function onEditBHDay(id,n){
   refreshEditBK(id);
 }
 function cancelEdit(){
-  if(editingShiftId!==null)for(var i=0;i<shifts.length;i++)if(shifts[i].id===editingShiftId){var s=shifts[i];delete s._editBHDay1;delete s._editBHDay2;delete s._editOffsite;delete s._editCallIns;break;}
+  if(editingShiftId!==null)for(var i=0;i<shifts.length;i++)if(shifts[i].id===editingShiftId){var s=shifts[i];delete s._editBHDay1;delete s._editBHDay2;delete s._editOffsite;delete s._editCallIns;delete s._editPreCall;delete s._editCallFrom;break;}
   editingShiftId=null;
   document.getElementById('edit-scrim').className='scrim';
   document.getElementById('edit-sheet').className='sheet';
@@ -1448,12 +1491,13 @@ function refreshEditBK(id){
   if(s&&s._editOffsite){
     breakMin=0;breakStart='';
     var sMin=parseTime(start),eMin=parseTime(end);
+    var eff=editEffCallIns(s,start);
     if(sMin!==null&&eMin!==null){
       var totMin=(eMin-sMin)+(spans?1440:0);
-      var cres=normCallRanges(s._editCallIns||[],sMin,totMin);
+      var cres=eff.err?{err:eff.err}:normCallRanges(eff.list,sMin,totMin);
       if(cres.err){bkEl.innerHTML='<div style="padding:8px 0;border-top:1px solid var(--line-soft);font-size:12.5px;color:var(--warn)">'+esc(cres.err)+'</div>';return;}
     }
-    callOpts={offsite:true,callIns:s._editCallIns||[]};
+    callOpts={offsite:true,callIns:eff.list||[]};
   }
   var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts,(callOpts&&tiersOn())?tierCtxBefore(date,start,id):undefined);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
@@ -1484,8 +1528,9 @@ function saveEdit(id){
     breakMin=0;breakStart='';
     var sMin=parseTime(start),eMin=parseTime(end);
     var totMin=(eMin-sMin)+(spans?1440:0);
-    if(normCallRanges(s._editCallIns||[],sMin,totMin).err)return;
-    cleanCIs=(s._editCallIns||[]).filter(function(ci){return validTime(ci.start)&&validTime(ci.end);}).map(function(ci){return{start:ci.start,end:ci.end};});
+    var eff=editEffCallIns(s,start);
+    if(eff.err||normCallRanges(eff.list,sMin,totMin).err)return;
+    cleanCIs=eff.list.filter(function(ci){return validTime(ci.start)&&validTime(ci.end);}).map(function(ci){return{start:ci.start,end:ci.end};});
     callOpts={offsite:true,callIns:cleanCIs};
   }
   var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts,(callOpts&&tiersOn())?tierCtxBefore(date,start,id):undefined);
@@ -1493,7 +1538,7 @@ function saveEdit(id){
   var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
   Object.assign(s,{date:date,start:start,end:end,bh:bhDates.length>0,bhDates:bhDates,endsNextDay:ende,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands))});
   if(offsite){s.offsite=true;s.callIns=cleanCIs;}else{delete s.offsite;delete s.callIns;}
-  delete s._editBHDay1;delete s._editBHDay2;delete s._editOffsite;delete s._editCallIns;
+  delete s._editBHDay1;delete s._editBHDay2;delete s._editOffsite;delete s._editCallIns;delete s._editPreCall;delete s._editCallFrom;
   if(tiersOn())recomputeAllShifts();else recomputeDateSplit(s);
   persist();toast('Shift updated');cancelEdit();renderSummary();
 }
