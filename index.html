@@ -296,7 +296,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
             <button class="toggle" id="l-offsite-toggle" onclick="toggleOffsite()"></button>
           </div>
           <div id="l-callins" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
-            <div class="lbl" style="margin-bottom:8px">Called in?</div>
+            <div class="lbl" style="margin-bottom:8px">Time worked on site</div>
             <div id="l-callin-rows"></div>
             <button class="btn-ghost" onclick="addCallIn()">+ Add call in</button>
           </div>
@@ -434,7 +434,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 var DOW_IE=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 var PALETTE=['#2563eb','#7c3aed','#0d9488','#dc2626','#d97706','#0891b2','#059669','#f59e0b'];
 var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
-var settings={periodType:'weekly',nextPayslipDate:'',periodDefers:{}};
+var settings={periodType:'weekly',nextPayslipDate:'',periodDefers:{},callTiers:null};
 var onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null,bandEditSnapshot=null,pendingBackfill=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='',historyGroupMode='shifts';
@@ -454,7 +454,7 @@ function loadData(){
     if(s)shifts=JSON.parse(s);
     if(t)shiftTemplates=JSON.parse(t);else loadDefaultTemplates();
     if(m)manualEntries=JSON.parse(m);
-    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};}
+    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};settings.callTiers=ps.callTiers||null;}
     else{var oldPP=localStorage.getItem('sp_pp');if(oldPP)settings.periodType=oldPP;}
     onboarded=ob==='1';
     ensureDefaultBands();
@@ -583,8 +583,43 @@ function slotSite(callOpts,callRanges,abs){
   return'offsite';
 }
 function callOptsForShift(s){return s&&s.offsite?{offsite:true,callIns:s.callIns||[]}:null;}
+function tiersOn(){return!!(settings.callTiers&&settings.callTiers.mode==='factor');}
+function weekKeyOf(ds){var d=new Date(ds+'T12:00');d.setDate(d.getDate()-irishDow(d));return dateStr(d);}
+// Tier pricing: off-site slots pay a multiple of the on-site rate for that
+// time of day. The first N call hours in a calendar week (Mon-Sun) use f1,
+// the rest f2. tierCtx.consumed tracks call minutes already used per week,
+// so pricing depends on shift order; recomputeAllShifts() owns that order.
+function priceSlotOffsite(dow,tod,slotIsBH,slotDateStr,tierCtx,slotMin){
+  var ct=settings.callTiers;
+  var base=pickBandForSlot(dow,tod,slotIsBH,'onsite');
+  var wk=weekKeyOf(slotDateStr);
+  if(!tierCtx.consumed)tierCtx.consumed={};
+  var used=tierCtx.consumed[wk]||0;
+  var thrMin=(parseFloat(ct.hours)||0)*60;
+  var first=thrMin<=0||used<thrMin;
+  var f=first?(parseFloat(ct.f1)||0):(parseFloat(ct.f2)||0);
+  tierCtx.consumed[wk]=used+slotMin;
+  return{id:(first?'ct1_':'ct2_')+(base?base.id:'none'),name:'Call '+f+'x '+(base?base.name:'no base rate'),color:first?'#0891b2':'#f59e0b',rate:(base?base.rate||0:0)*f,slip:ct.slip||0};
+}
+// Call minutes consumed per week by off-site shifts starting before (date,start).
+function tierCtxBefore(date,start,excludeId){
+  var ctx={consumed:{}};
+  if(!tiersOn())return ctx;
+  var target=date+'T'+(start||'00:00');
+  shifts.slice().sort(function(a,b){return(a.date+'T'+a.start)<(b.date+'T'+b.start)?-1:1;}).forEach(function(s){
+    if(excludeId!==null&&excludeId!==undefined&&s.id===excludeId)return;
+    if(!s.offsite)return;
+    if((s.date+'T'+s.start)>=target)return;
+    splitShift(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false,callOptsForShift(s),ctx);
+  });
+  return ctx;
+}
+function recomputeAllShifts(){
+  var ctx={consumed:{}};
+  shifts.slice().sort(function(a,b){return(a.date+'T'+a.start)<(b.date+'T'+b.start)?-1:1;}).forEach(function(s){recomputeShiftFromBands(s,ctx);});
+}
 
-function splitShift(date,start,end,bhDates,breakMin,breakStart,endsNextDay,callOpts){
+function splitShift(date,start,end,bhDates,breakMin,breakStart,endsNextDay,callOpts,tierCtx){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return[];
   var nextDay=endsNextDay||e<=s;
@@ -595,23 +630,30 @@ function splitShift(date,start,end,bhDates,breakMin,breakStart,endsNextDay,callO
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var bhSet=(bhDates&&bhDates.length)?bhDates:[];
   var cr=normCallRanges(callOpts&&callOpts.callIns,s,totalMin),callRanges=cr.ranges||[];
-  var buckets={};
+  var buckets={},virt={},tCtx=tierCtx||{consumed:{}};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
     if(breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];}))continue;
     var slotDate=new Date(baseDate);slotDate.setDate(slotDate.getDate()+dayOffset);
-    var slotIsBH=bhSet.indexOf(dateStr(slotDate))!==-1;
-    var pick=pickBandForSlot(dow,tod,slotIsBH,slotSite(callOpts,callRanges,abs));
+    var slotDS=dateStr(slotDate);
+    var slotIsBH=bhSet.indexOf(slotDS)!==-1;
+    var site=slotSite(callOpts,callRanges,abs);
+    if(site==='offsite'&&tiersOn()){
+      var info=priceSlotOffsite(dow,tod,slotIsBH,slotDS,tCtx,SLOT);
+      buckets[info.id]=(buckets[info.id]||0)+SLOT;virt[info.id]=info;
+      continue;
+    }
+    var pick=pickBandForSlot(dow,tod,slotIsBH,site);
     if(!pick)continue;
     buckets[pick.id]=(buckets[pick.id]||0)+SLOT;
   }
   var result=[];
-  for(var bid in buckets){var bb=getBand(bid),h=buckets[bid]/60;result.push({id:bid,name:bb?bb.name:'Unknown',color:bb?bb.color:'#999',hours:h,amount:h*(bb?bb.rate||0:0),rate:bb?bb.rate||0:0,slip:bb?bb.slip||0:0});}
+  for(var bid in buckets){var bb=virt[bid]||getBand(bid),h=buckets[bid]/60;result.push({id:bid,name:bb?bb.name:'Unknown',color:bb?bb.color:'#999',hours:h,amount:h*(bb?bb.rate||0:0),rate:bb?bb.rate||0:0,slip:bb?bb.slip||0:0});}
   result.sort(function(a,b){return b.amount-a.amount;});
   return result;
 }
 // Split shift returning per-date buckets for overnight attribution
-function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay,callOpts){
+function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay,callOpts,tierCtx){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return{};
   var nextDay=endsNextDay||e<=s;
@@ -622,7 +664,7 @@ function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var bhSet=(bhDates&&bhDates.length)?bhDates:[];
   var cr=normCallRanges(callOpts&&callOpts.callIns,s,totalMin),callRanges=cr.ranges||[];
-  var byDate={};
+  var byDate={},virt={},tCtx=tierCtx||{consumed:{}};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
     if(breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];}))continue;
@@ -630,17 +672,25 @@ function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay
     var slotDateStr=dateStr(slotDate);
     var slotIsBH=bhSet.indexOf(slotDateStr)!==-1;
     if(!byDate[slotDateStr])byDate[slotDateStr]={};
-    var pick=pickBandForSlot(dow,tod,slotIsBH,slotSite(callOpts,callRanges,abs));
-    if(!pick)continue;
-    if(!byDate[slotDateStr][pick.id])byDate[slotDateStr][pick.id]=0;
-    byDate[slotDateStr][pick.id]+=SLOT;
+    var site=slotSite(callOpts,callRanges,abs);
+    var bid2;
+    if(site==='offsite'&&tiersOn()){
+      var info=priceSlotOffsite(dow,tod,slotIsBH,slotDateStr,tCtx,SLOT);
+      virt[info.id]=info;bid2=info.id;
+    }else{
+      var pick=pickBandForSlot(dow,tod,slotIsBH,site);
+      if(!pick)continue;
+      bid2=pick.id;
+    }
+    if(!byDate[slotDateStr][bid2])byDate[slotDateStr][bid2]=0;
+    byDate[slotDateStr][bid2]+=SLOT;
   }
   // Convert to result format
   var result={};
   for(var d in byDate){
     result[d]=[];
     for(var bid in byDate[d]){
-      var bb=getBand(bid),h2=byDate[d][bid]/60;
+      var bb=virt[bid]||getBand(bid),h2=byDate[d][bid]/60;
       result[d].push({id:bid,name:bb?bb.name:'Unknown',color:bb?bb.color:'#999',hours:h2,amount:h2*(bb?bb.rate||0:0),rate:bb?bb.rate||0:0,slip:bb?bb.slip||0:0});
     }
     result[d].sort(function(a,b){return b.amount-a.amount;});
@@ -648,11 +698,11 @@ function splitShiftByDate(date,start,end,bhDates,breakMin,breakStart,endsNextDay
   return result;
 }
 
-function recomputeDateSplit(s){if(s.start&&s.end&&(isOvernight(s.start,s.end)||s.endsNextDay))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false,callOptsForShift(s));else delete s.dateSplit;}
+function recomputeDateSplit(s,tierCtx){if(s.start&&s.end&&(isOvernight(s.start,s.end)||s.endsNextDay))s.dateSplit=splitShiftByDate(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false,callOptsForShift(s),tierCtx);else delete s.dateSplit;}
 
 function shiftTotalHours(date,start,end,breakMin,endsNextDay){var s=parseTime(start),e=parseTime(end);if(s===null||e===null)return 0;var nextDay=endsNextDay||e<=s;var totalMin=(e-s)+(nextDay?1440:0);return(totalMin-breakMin)/60;}
 
-function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNextDay,callOpts){
+function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNextDay,callOpts,tierCtx){
   var SLOT=15,s=parseTime(start),e=parseTime(end);
   if(s===null||e===null)return'';
   var nextDay=endsNextDay||e<=s;
@@ -662,7 +712,7 @@ function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNe
   if(bs!==null&&breakMin>0){var bsAbs=(bs<s)?bs+1440:bs;breakRanges.push([bsAbs,bsAbs+breakMin]);}
   var bhSet=(bhDates&&bhDates.length)?bhDates:[];
   var cr=normCallRanges(callOpts&&callOpts.callIns,s,totalMin),callRanges=cr.ranges||[];
-  var crosses=nextDay,day1=[],day2=[];
+  var crosses=nextDay,day1=[],day2=[],tCtx=tierCtx||{consumed:{}};
   for(var m=0;m<totalMin;m+=SLOT){
     var abs=s+m,dayOffset=Math.floor(abs/1440),dow=(baseDow+dayOffset)%7,tod=abs%1440;
     var inBreak=breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];});
@@ -670,9 +720,16 @@ function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNe
     if(inBreak){color='break';label='Break';}
     else{
       var slotDate=new Date(baseDate);slotDate.setDate(slotDate.getDate()+dayOffset);
-      var slotIsBH=bhSet.indexOf(dateStr(slotDate))!==-1;
-      var pick=pickBandForSlot(dow,tod,slotIsBH,slotSite(callOpts,callRanges,abs));
-      color=pick?pick.color:'#ccc';label=pick?pick.name:'\u2014';
+      var slotDS=dateStr(slotDate);
+      var slotIsBH=bhSet.indexOf(slotDS)!==-1;
+      var site=slotSite(callOpts,callRanges,abs);
+      if(site==='offsite'&&tiersOn()){
+        var info=priceSlotOffsite(dow,tod,slotIsBH,slotDS,tCtx,SLOT);
+        color=info.color;label=info.name;
+      }else{
+        var pick=pickBandForSlot(dow,tod,slotIsBH,site);
+        color=pick?pick.color:'#ccc';label=pick?pick.name:'\u2014';
+      }
     }
     var arr=dayOffset===0?day1:day2;arr.push({from:tod,to:tod+SLOT,color:color,label:label});
   }
@@ -754,7 +811,7 @@ function updateCallIn(i,f,v){if(logCallIns[i]){logCallIns[i][f]=v;refreshLog();}
 function renderCallIns(){
   var el=document.getElementById('l-callin-rows');if(!el)return;
   var html='';
-  if(!logCallIns.length)html+='<div class="tiny" style="margin-bottom:8px">If you were called in to work, add those times. They pay at your normal rates.</div>';
+  if(!logCallIns.length)html+='<div class="tiny" style="margin-bottom:8px">Add any time you worked on site during this shift, whether a normal day before call started or a call in. It pays your normal rates.</div>';
   for(var i=0;i<logCallIns.length;i++){
     var ci=logCallIns[i];
     html+='<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">';
@@ -815,7 +872,8 @@ function refreshLog(){
     for(var ri=0;ri<callRanges.length;ri++)onsiteMin+=callRanges[ri][1]-callRanges[ri][0];
     callOpts={offsite:true,callIns:logCallIns};
   }
-  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,logEndsNextDay,callOpts);
+  var tierBase=(callOpts&&tiersOn())?tierCtxBefore(date,start,null):null;
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,logEndsNextDay,callOpts,tierBase?JSON.parse(JSON.stringify(tierBase)):undefined);
   var totalH=shiftTotalHours(date,start,end,breakMin,logEndsNextDay);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   if(bkEl){
@@ -824,7 +882,7 @@ function refreshLog(){
     html+='<div class="lbl" style="margin-bottom:6px">This shift pays</div>';
     html+='<div class="bk-amt">\u20ac'+fmted+'<span style="font-size:.55em;opacity:.7">.'+(parts[1]||'00')+'</span></div>';
     html+='<div class="tiny" style="margin-bottom:2px">'+totalH.toFixed(1)+'h gross'+(callOpts?' \u00b7 '+(onsiteMin/60).toFixed(1)+'h on site, '+((shiftTotMin-onsiteMin)/60).toFixed(1)+'h on call':'')+'</div>';
-    html+=buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,'light',logEndsNextDay,callOpts);
+    html+=buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,'light',logEndsNextDay,callOpts,tierBase?JSON.parse(JSON.stringify(tierBase)):undefined);
     if(split.length>0){
       html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:8px">';
       for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span style="color:var(--muted);font-size:12px">'+b.hours.toFixed(1)+'h \u00b7 '+fmtEUR(b.rate)+'/h</span></span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
@@ -855,7 +913,7 @@ function addShift(){
     cleanCIs=logCallIns.filter(function(ci){return validTime(ci.start)&&validTime(ci.end);}).map(function(ci){return{start:ci.start,end:ci.end};});
     callOpts={offsite:true,callIns:cleanCIs};
   }
-  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,logEndsNextDay,callOpts);
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,logEndsNextDay,callOpts,(callOpts&&tiersOn())?tierCtxBefore(date,start,null):undefined);
   var totalH=shiftTotalHours(date,start,end,breakMin,logEndsNextDay);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
@@ -863,7 +921,7 @@ function addShift(){
   var newShift={id:Date.now(),date:date,start:start,end:end,bh:bhDates.length>0,endsNextDay:logEndsNextDay,bhDates:bhDates,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands)),tplName:tplName};
   if(logOffsite){newShift.offsite=true;newShift.callIns=cleanCIs;}
   shifts.push(newShift);
-  recomputeDateSplit(shifts[shifts.length-1]);
+  if(tiersOn())recomputeAllShifts();else recomputeDateSplit(shifts[shifts.length-1]);
   persist();hasInitedPeriod=false;
   var payslipD=getNextPayslipDate();showSuccess(totalAmt,fmtPayslipDate(payslipD));
   document.getElementById('l-start').value='';document.getElementById('l-end').value='';
@@ -1297,7 +1355,7 @@ function renderEditCallIns(id){
   var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}
   if(!s||!s._editOffsite){el.innerHTML='';return;}
   var list=s._editCallIns||[];
-  var html='<div style="margin:-2px 0 10px"><div class="lbl" style="margin-bottom:6px">Called in?</div>';
+  var html='<div style="margin:-2px 0 10px"><div class="lbl" style="margin-bottom:6px">Time worked on site</div>';
   for(var j=0;j<list.length;j++){
     html+='<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">';
     html+='<div class="field" style="flex:1"><label class="lbl" style="font-size:9.5px">On site from</label><input type="time" value="'+esc(list[j].start||'')+'" onchange="updateEditCallIn('+id+','+j+',\'start\',this.value)" oninput="updateEditCallIn('+id+','+j+',\'start\',this.value)"></div>';
@@ -1397,7 +1455,7 @@ function refreshEditBK(id){
     }
     callOpts={offsite:true,callIns:s._editCallIns||[]};
   }
-  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts);
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts,(callOpts&&tiersOn())?tierCtxBefore(date,start,id):undefined);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var html='<div style="padding:8px 0;border-top:1px solid var(--line-soft)">';
   for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';}
@@ -1430,16 +1488,16 @@ function saveEdit(id){
     cleanCIs=(s._editCallIns||[]).filter(function(ci){return validTime(ci.start)&&validTime(ci.end);}).map(function(ci){return{start:ci.start,end:ci.end};});
     callOpts={offsite:true,callIns:cleanCIs};
   }
-  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts);
+  var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts,(callOpts&&tiersOn())?tierCtxBefore(date,start,id):undefined);
   var totalH=shiftTotalHours(date,start,end,breakMin,ende),totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var hm={},pm={};for(var i=0;i<split.length;i++){hm[split[i].id]=split[i].hours;pm[split[i].id]=split[i].amount;}
   Object.assign(s,{date:date,start:start,end:end,bh:bhDates.length>0,bhDates:bhDates,endsNextDay:ende,breakMin:breakMin,breakStart:breakStart,split:split,th:totalH,tp:totalAmt,hm:hm,pm:pm,snap:JSON.parse(JSON.stringify(bands))});
   if(offsite){s.offsite=true;s.callIns=cleanCIs;}else{delete s.offsite;delete s.callIns;}
   delete s._editBHDay1;delete s._editBHDay2;delete s._editOffsite;delete s._editCallIns;
-  recomputeDateSplit(s);
+  if(tiersOn())recomputeAllShifts();else recomputeDateSplit(s);
   persist();toast('Shift updated');cancelEdit();renderSummary();
 }
-function delShift(id){shifts=shifts.filter(function(s){return s.id!==id;});persist();hasInitedPeriod=false;renderSummary();toast('Shift removed');}
+function delShift(id){shifts=shifts.filter(function(s){return s.id!==id;});if(tiersOn())recomputeAllShifts();persist();hasInitedPeriod=false;renderSummary();toast('Shift removed');}
 function delManual(id){manualEntries=manualEntries.filter(function(m){return m.id!==id;});persist();renderSummary();toast('Entry removed');}
 function clearAll(){shifts=[];manualEntries=[];persist();editingShiftId=null;hasInitedPeriod=false;renderSummary();toast('All shifts cleared');}
 
@@ -1522,12 +1580,34 @@ function renderBands(){
   var onsite=sorted.filter(function(b){return bandSite(b)!=='offsite';});
   var offsite=sorted.filter(function(b){return bandSite(b)==='offsite';});
   for(var i=0;i<onsite.length;i++)html+=bandCardHTML(onsite[i]);
+  var factorMode=tiersOn(),ct=settings.callTiers||{};
   html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin:20px 0 10px">';
-  html+='<div><div style="font-size:15px;font-weight:700;font-family:Fraunces,serif">Off-site call rates</div><div class="tiny" style="margin-top:2px">Rates while on call from home. Time worked after a call in uses your normal rates above.</div></div>';
-  html+='<button class="btn-ghost" style="flex-shrink:0" onclick="addBand(\'offsite\')">+ Add</button></div>';
-  if(!offsite.length)html+='<div class="tiny" style="padding:4px 0 12px">No call rates set up. Add one to use the off-site call toggle when logging.</div>';
-  for(var j=0;j<offsite.length;j++)html+=bandCardHTML(offsite[j]);
+  html+='<div><div style="font-size:15px;font-weight:700;font-family:Fraunces,serif">Off-site call rates</div><div class="tiny" style="margin-top:2px">Rates while on call from home. Time worked on site uses your normal rates above.</div></div>';
+  html+=(factorMode?'':'<button class="btn-ghost" style="flex-shrink:0" onclick="addBand(\'offsite\')">+ Add</button>')+'</div>';
+  html+='<div class="band-card" style="padding:13px 14px">';
+  html+='<div class="field"><label class="lbl">How call pays</label><select onchange="setCallMode(this.value)"><option value="bands"'+(factorMode?'':' selected')+'>Own hourly rates below</option><option value="factor"'+(factorMode?' selected':'')+'>Multiple of my normal rate</option></select></div>';
+  if(factorMode){
+    html+='<div class="row-2" style="margin-top:10px"><div class="field"><label class="lbl">First hours per week</label><input type="number" step="0.5" min="0" value="'+(ct.hours||0)+'" oninput="updateCallTier(\'hours\',this.value)" onchange="updateCallTier(\'hours\',this.value)"></div><div class="field"><label class="lbl">At multiple</label><input type="number" step="0.05" min="0" value="'+(ct.f1||0)+'" oninput="updateCallTier(\'f1\',this.value)" onchange="updateCallTier(\'f1\',this.value)"></div></div>';
+    html+='<div class="row-2" style="margin-top:10px"><div class="field"><label class="lbl">After that, multiple</label><input type="number" step="0.05" min="0" value="'+(ct.f2||0)+'" oninput="updateCallTier(\'f2\',this.value)" onchange="updateCallTier(\'f2\',this.value)"></div><div class="field"><label class="lbl">Payslip</label><select onchange="updateCallTier(\'slip\',this.value)"><option value="0"'+(ct.slip===0?' selected':'')+'>Same payslip</option><option value="1"'+(ct.slip===1?' selected':'')+'>Next payslip</option><option value="2"'+(ct.slip===2?' selected':'')+'>2 payslips later</option></select></div></div>';
+    html+='<div class="tiny" style="margin-top:10px">Call pays this multiple of your normal rate for that time of day. Weeks run Monday to Sunday. Time worked on site pays your normal rates and does not use up call hours. Set hours to 0 to always pay the first multiple. Changes reprice past call shifts.</div>';
+  }
+  html+='</div>';
+  if(!factorMode){
+    if(!offsite.length)html+='<div class="tiny" style="padding:8px 0 12px">No call rates set up. Add one to use the off-site call toggle when logging.</div>';
+    for(var j=0;j<offsite.length;j++)html+=bandCardHTML(offsite[j]);
+  }
   el.innerHTML=html;
+}
+function setCallMode(m){
+  if(m==='factor'){if(settings.callTiers)settings.callTiers.mode='factor';else settings.callTiers={mode:'factor',hours:10,f1:1.5,f2:0.5,slip:0};}
+  else if(settings.callTiers)settings.callTiers.mode='bands';
+  recomputeAllShifts();persist();renderBands();
+}
+function updateCallTier(k,v){
+  if(!settings.callTiers)return;
+  if(k==='slip')settings.callTiers.slip=parseInt(v)||0;
+  else settings.callTiers[k]=parseFloat(v)||0;
+  recomputeAllShifts();persist();
 }
 function revertBandEdit(){
   if(!bandEditSnapshot)return;
@@ -1558,18 +1638,21 @@ function shiftUsesBand(s,bandId){
   if(s.hm&&s.hm[bandId]!==undefined)return true;
   return false;
 }
-function recomputeShiftFromBands(s){
-  var newSplit=splitShift(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false,callOptsForShift(s));
+function recomputeShiftFromBands(s,tierCtx){
+  // dateSplit walks the same slots as splitShift, so it gets a clone of the
+  // pre-shift tier state; only the splitShift call advances the real context.
+  var ctxSnap=tierCtx?JSON.parse(JSON.stringify(tierCtx)):undefined;
+  var newSplit=splitShift(s.date,s.start,s.end,s.bhDates||[],s.breakMin||0,s.breakStart||'',s.endsNextDay||false,callOptsForShift(s),tierCtx);
   s.split=newSplit;s.hm={};s.pm={};
   newSplit.forEach(function(b){s.hm[b.id]=b.hours;s.pm[b.id]=b.amount;});
   s.th=newSplit.reduce(function(t,b){return t+b.hours;},0);
   s.tp=newSplit.reduce(function(t,b){return t+b.amount;},0);
-  recomputeDateSplit(s);
+  recomputeDateSplit(s,ctxSnap);
 }
 function backfillBand(c){
   // c: {id, rate, slip, name, doRate, doSlip, doName, doStruct}
   if(c.doStruct){
-    shifts.forEach(function(s){recomputeShiftFromBands(s);});
+    recomputeAllShifts();
     return;
   }
   shifts.forEach(function(s){
@@ -1790,8 +1873,8 @@ function handleImport(e){
     if(data.shifts)shifts=data.shifts;
     if(data.manualEntries)manualEntries=data.manualEntries;
     if(data.shiftTemplates)shiftTemplates=data.shiftTemplates;
-    if(data.settings){settings.periodType=data.settings.periodType||settings.periodType;settings.nextPayslipDate=data.settings.nextPayslipDate||'';settings.periodDefers=data.settings.periodDefers||{};}
-    ensureDefaultBands();persist();hasInitedPeriod=false;
+    if(data.settings){settings.periodType=data.settings.periodType||settings.periodType;settings.nextPayslipDate=data.settings.nextPayslipDate||'';settings.periodDefers=data.settings.periodDefers||{};settings.callTiers=data.settings.callTiers||null;}
+    ensureDefaultBands();if(tiersOn())recomputeAllShifts();persist();hasInitedPeriod=false;
     renderBands();renderTemplates();renderTplChips();renderSummary();
     var ps=document.getElementById('period-select');if(ps)ps.value=settings.periodType;
     var pd=document.getElementById('payslip-date-input');if(pd)pd.value=settings.nextPayslipDate||'';
@@ -1889,7 +1972,7 @@ function openDayModal(ds){
     html+='<div style="border:1px solid var(--line);border-radius:var(--r-sm);padding:12px;margin-bottom:10px">';
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:14px;font-weight:700">'+(s.tplName||s.start+'–'+s.end)+'</div><div style="font-family:Fraunces,serif;font-size:18px;font-weight:600;color:var(--blue)">'+fmtEUR(s.tp||0)+'</div></div>';
     html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.start+'–'+s.end+' &middot; '+(s.th||0).toFixed(1)+'h'+(s.breakMin?' &middot; '+s.breakMin+'min break':'')+(s.offsite?' &middot; on call':'')+'</div>';
-    if(s.offsite&&s.callIns&&s.callIns.length){html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.callIns.map(function(ci){return'Called in '+ci.start+' to '+ci.end;}).join(' &middot; ')+'</div>';}
+    if(s.offsite&&s.callIns&&s.callIns.length){html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.callIns.map(function(ci){return'On site '+ci.start+' to '+ci.end;}).join(' &middot; ')+'</div>';}
     if(split.length){html+='<div style="display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line-soft);padding-top:6px">';split.forEach(function(b){html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line-soft)"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' · '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';});html+='</div>';}
     html+='<div style="display:flex;gap:8px;margin-top:10px"><button onclick="closeDayModal();startEdit('+s.id+')" style="flex:1;background:none;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;font-family:Geist,sans-serif;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer">Edit</button><button onclick="closeDayModal();delShift('+s.id+')" style="flex:1;background:none;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;font-family:Geist,sans-serif;font-size:13px;font-weight:600;color:var(--warn);cursor:pointer">Delete</button></div>';
     html+='</div>';
@@ -1913,7 +1996,7 @@ shifts.forEach(function(s){
   }
   s.bh=s.bhDates.length>0;
 });
-shifts.forEach(recomputeDateSplit);
+if(tiersOn())recomputeAllShifts();else shifts.forEach(function(s){recomputeDateSplit(s);});
 setLogDate(new Date().toISOString().split('T')[0]);
 renderTplChips();
 var psEl=document.getElementById('period-select');if(psEl)psEl.value=settings.periodType;
@@ -2014,7 +2097,20 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
       expected:{totalHours:14,gross:252,byBand:{Night:{hours:3,amount:120},'Call weekday':{hours:11,amount:132}}} },
     { id:'OC6', desc:'Off-site call 20:00-08:00 but called in for the entire span → identical to O1',
       inputs:{date:'2026-07-15',start:'20:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[{start:'20:00',end:'08:00'}]}},
-      expected:{totalHours:12,gross:480,byBand:{Night:{hours:12,amount:480}}} }
+      expected:{totalHours:12,gross:480,byBand:{Night:{hours:12,amount:480}}} },
+
+    { id:'T1', desc:'Tiers 10h@1.5x then 0.5x, fresh week: Wed 18:00-08:00 call splits 2h Std-base + 8h Night-base at 1.5x, last 4h at 0.5x',
+      inputs:{date:'2026-07-15',start:'18:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[]}},
+      settings:{callTiers:{mode:'factor',hours:10,f1:1.5,f2:0.5,slip:0}},
+      expected:{totalHours:14,gross:650,byBand:{'Call 1.5x Standard':{hours:2,amount:90},'Call 1.5x Night':{hours:8,amount:480},'Call 0.5x Night':{hours:4,amount:80}}} },
+    { id:'T2', desc:'Tiers with 10h already used this week: whole shift at 0.5x',
+      inputs:{date:'2026-07-15',start:'18:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[]},tierCtx:{consumed:{'2026-07-13':600}}},
+      settings:{callTiers:{mode:'factor',hours:10,f1:1.5,f2:0.5,slip:0}},
+      expected:{totalHours:14,gross:270,byBand:{'Call 0.5x Standard':{hours:2,amount:30},'Call 0.5x Night':{hours:12,amount:240}}} },
+    { id:'T3', desc:'Tiers + call-in 22:00-01:00: on-site time pays Night and does not consume call hours',
+      inputs:{date:'2026-07-15',start:'18:00',end:'08:00',bhDates:[],breakMin:0,breakStart:'',endsNextDay:false,callOpts:{offsite:true,callIns:[{start:'22:00',end:'01:00'}]}},
+      settings:{callTiers:{mode:'factor',hours:10,f1:1.5,f2:0.5,slip:0}},
+      expected:{totalHours:14,gross:710,byBand:{'Call 1.5x Standard':{hours:2,amount:90},'Call 1.5x Night':{hours:8,amount:480},'Call 0.5x Night':{hours:1,amount:20},Night:{hours:3,amount:120}}} }
   ];
 
   function round(o){
@@ -2033,7 +2129,7 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
 
     var i=sc.inputs;
     var actualHours=shiftTotalHours(i.date,i.start,i.end,i.breakMin,i.endsNextDay);
-    var split=splitShift(i.date,i.start,i.end,i.bhDates,i.breakMin,i.breakStart,i.endsNextDay,i.callOpts);
+    var split=splitShift(i.date,i.start,i.end,i.bhDates,i.breakMin,i.breakStart,i.endsNextDay,i.callOpts,i.tierCtx?JSON.parse(JSON.stringify(i.tierCtx)):undefined);
     var byBand={};
     split.forEach(function(b){byBand[b.name]={hours:b.hours,amount:b.amount};});
     var gross=split.reduce(function(t,b){return t+b.amount;},0);
@@ -2042,7 +2138,7 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
     if(sc.expected.payslipRouting){
       var routing={};
       if(isOvernight(i.start,i.end)||i.endsNextDay){
-        var byDate=splitShiftByDate(i.date,i.start,i.end,i.bhDates,i.breakMin,i.breakStart,i.endsNextDay,i.callOpts);
+        var byDate=splitShiftByDate(i.date,i.start,i.end,i.bhDates,i.breakMin,i.breakStart,i.endsNextDay,i.callOpts,i.tierCtx?JSON.parse(JSON.stringify(i.tierCtx)):undefined);
         Object.keys(byDate).forEach(function(ds){
           var earnedPk=getPeriodKey(ds);
           byDate[ds].forEach(function(b){
