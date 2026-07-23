@@ -292,7 +292,7 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
         </div>
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Off-site call</div><div class="tiny">On call from home. Pays your call rates.</div></div>
+            <div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Off-site call</div><div class="tiny">On call from home.</div></div>
             <button class="toggle" id="l-offsite-toggle" onclick="toggleOffsite()"></button>
           </div>
           <div id="l-callins" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
@@ -454,7 +454,7 @@ function loadData(){
     if(s)shifts=JSON.parse(s);
     if(t)shiftTemplates=JSON.parse(t);else loadDefaultTemplates();
     if(m)manualEntries=JSON.parse(m);
-    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};settings.callTiers=ps.callTiers||null;}
+    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};settings.callTiers=ps.callTiers||null;if(settings.callTiers)settings.callTiers.hours=0;}
     else{var oldPP=localStorage.getItem('sp_pp');if(oldPP)settings.periodType=oldPP;}
     onboarded=ob==='1';
     ensureDefaultBands();
@@ -1581,17 +1581,17 @@ function renderBands(){
   var offsite=sorted.filter(function(b){return bandSite(b)==='offsite';});
   for(var i=0;i<onsite.length;i++)html+=bandCardHTML(onsite[i]);
   var factorMode=tiersOn(),ct=settings.callTiers||{};
-  html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin:20px 0 10px">';
-  html+='<div><div style="font-size:15px;font-weight:700;font-family:Fraunces,serif">Off-site call rates</div><div class="tiny" style="margin-top:2px">Rates while on call from home. Time worked on site uses your normal rates above.</div></div>';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin:20px 0 4px">';
+  html+='<h2 style="font-size:17px;font-weight:600;letter-spacing:-0.01em;color:var(--ink)">Off-site call rates</h2>';
   html+=(factorMode?'':'<button class="btn-ghost" style="flex-shrink:0" onclick="addBand(\'offsite\')">+ Add</button>')+'</div>';
-  html+='<div class="band-card" style="padding:13px 14px">';
-  html+='<div class="field"><label class="lbl">How call pays</label><select onchange="setCallMode(this.value)"><option value="bands"'+(factorMode?'':' selected')+'>Own hourly rates below</option><option value="factor"'+(factorMode?' selected':'')+'>Multiple of my normal rate</option></select></div>';
+  html+='<div class="tiny" style="margin-bottom:10px">Rates while on call from home. Time worked on site uses your normal rates above.</div>';
+  html+='<div class="band-card"><div style="padding:13px 16px">';
+  html+='<div class="field"><label class="lbl">How call pays</label><select onchange="setCallMode(this.value)"><option value="bands"'+(factorMode?'':' selected')+'>Hourly rate</option><option value="factor"'+(factorMode?' selected':'')+'>Multiple of normal rate</option></select></div>';
   if(factorMode){
-    html+='<div class="row-2" style="margin-top:10px"><div class="field"><label class="lbl">First hours per week</label><input type="number" step="0.5" min="0" value="'+(ct.hours||0)+'" oninput="updateCallTier(\'hours\',this.value)" onchange="updateCallTier(\'hours\',this.value)"></div><div class="field"><label class="lbl">At multiple</label><input type="number" step="0.05" min="0" value="'+(ct.f1||0)+'" oninput="updateCallTier(\'f1\',this.value)" onchange="updateCallTier(\'f1\',this.value)"></div></div>';
-    html+='<div class="row-2" style="margin-top:10px"><div class="field"><label class="lbl">After that, multiple</label><input type="number" step="0.05" min="0" value="'+(ct.f2||0)+'" oninput="updateCallTier(\'f2\',this.value)" onchange="updateCallTier(\'f2\',this.value)"></div><div class="field"><label class="lbl">Payslip</label><select onchange="updateCallTier(\'slip\',this.value)"><option value="0"'+(ct.slip===0?' selected':'')+'>Same payslip</option><option value="1"'+(ct.slip===1?' selected':'')+'>Next payslip</option><option value="2"'+(ct.slip===2?' selected':'')+'>2 payslips later</option></select></div></div>';
-    html+='<div class="tiny" style="margin-top:10px">Call pays this multiple of your normal rate for that time of day. Weeks run Monday to Sunday. Time worked on site pays your normal rates and does not use up call hours. Set hours to 0 to always pay the first multiple. Changes reprice past call shifts.</div>';
+    html+='<div class="row-2" style="margin-top:10px"><div class="field"><label class="lbl">Multiple</label><input type="number" step="0.05" min="0" value="'+(ct.f1||0)+'" oninput="updateCallTier(\'f1\',this.value)" onchange="updateCallTier(\'f1\',this.value)"></div><div class="field"><label class="lbl">Payslip</label><select onchange="updateCallTier(\'slip\',this.value)"><option value="0"'+(ct.slip===0?' selected':'')+'>Same payslip</option><option value="1"'+(ct.slip===1?' selected':'')+'>Next payslip</option><option value="2"'+(ct.slip===2?' selected':'')+'>2 payslips later</option></select></div></div>';
+    html+='<div class="tiny" style="margin-top:10px">Call pays this multiple of your normal rate for that time of day. Time worked on site pays your normal rates. Changing this reprices past call shifts.</div>';
   }
-  html+='</div>';
+  html+='</div></div>';
   if(!factorMode){
     if(!offsite.length)html+='<div class="tiny" style="padding:8px 0 12px">No call rates set up. Add one to use the off-site call toggle when logging.</div>';
     for(var j=0;j<offsite.length;j++)html+=bandCardHTML(offsite[j]);
@@ -1599,7 +1599,7 @@ function renderBands(){
   el.innerHTML=html;
 }
 function setCallMode(m){
-  if(m==='factor'){if(settings.callTiers)settings.callTiers.mode='factor';else settings.callTiers={mode:'factor',hours:10,f1:1.5,f2:0.5,slip:0};}
+  if(m==='factor'){if(settings.callTiers)settings.callTiers.mode='factor';else settings.callTiers={mode:'factor',hours:0,f1:0.5,f2:0,slip:0};settings.callTiers.hours=0;}
   else if(settings.callTiers)settings.callTiers.mode='bands';
   recomputeAllShifts();persist();renderBands();
 }
@@ -1607,6 +1607,7 @@ function updateCallTier(k,v){
   if(!settings.callTiers)return;
   if(k==='slip')settings.callTiers.slip=parseInt(v)||0;
   else settings.callTiers[k]=parseFloat(v)||0;
+  settings.callTiers.hours=0;
   recomputeAllShifts();persist();
 }
 function revertBandEdit(){
