@@ -1545,7 +1545,7 @@ function saveEdit(id){
   if(tiersWeekly())recomputeAllShifts();else recomputeDateSplit(s);
   persist();toast('Shift updated');cancelEdit();renderSummary();
 }
-function delShift(id){shifts=shifts.filter(function(s){return s.id!==id;});if(tiersWeekly())recomputeAllShifts();persist();hasInitedPeriod=false;renderSummary();toast('Shift removed');}
+function delShift(id){shifts=shifts.filter(function(s){return s.id!==id;});if(tiersWeekly())recomputeAllShifts();persist();renderSummary();toast('Shift removed');}
 function delManual(id){manualEntries=manualEntries.filter(function(m){return m.id!==id;});persist();renderSummary();toast('Entry removed');}
 function clearAll(){shifts=[];manualEntries=[];persist();editingShiftId=null;hasInitedPeriod=false;renderSummary();toast('All shifts cleared');}
 
