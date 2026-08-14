@@ -493,6 +493,18 @@ function ensureDefaultBands(){
   }
 }
 function getBand(id){for(var i=0;i<bands.length;i++)if(String(bands[i].id)===String(id))return bands[i];return null;}
+// Fixed display order for band summaries: Setup order, unknown bands last by
+// name. Sorting these by amount made the order jump around between periods.
+function stableBandOrder(arr){
+  var pos={};bands.forEach(function(b,i){pos[String(b.id)]=i;});
+  return arr.sort(function(a,b){
+    var pa=pos[String(a.id)],pb=pos[String(b.id)];
+    if(pa!==undefined&&pb!==undefined)return pa-pb;
+    if(pa!==undefined)return -1;
+    if(pb!==undefined)return 1;
+    return String(a.name||'').localeCompare(String(b.name||''));
+  });
+}
 function parseTime(s){if(!s||s.length<4)return null;var p=s.split(':'),h=parseInt(p[0],10),m=parseInt(p[1],10);return(isNaN(h)||isNaN(m))?null:h*60+m;}
 function validTime(t){var v=parseTime(t);return v!==null&&v>=0&&v<=1440;}
 function isOvernight(s,e){var sv=parseTime(s),ev=parseTime(e);return sv!==null&&ev!==null&&ev<=sv;}
@@ -921,7 +933,7 @@ function renderSummary(){
   if(settings.nextPayslipDate)html+='<div class="hero-tiny" style="margin-top:4px">Period ends <span class="hero-pill">'+payslipStr+'</span></div>';
   html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">Calculates your gross pay before tax, USC, PRSI and pension. Verify against your payslip.</div>';
   html+='</div>';
-  var bandArr=[];for(var k in byBand)bandArr.push(byBand[k]);bandArr.sort(function(a,b){return b.amount-a.amount;});
+  var bandArr=[];for(var k in byBand){byBand[k].id=k;bandArr.push(byBand[k]);}stableBandOrder(bandArr);
   var totalAmt=bandArr.reduce(function(a,b){return a+b.amount;},0)||1;
   if(bandArr.length){
     html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:12px">Next payslip breakdown</div><div class="bar-track">';
@@ -995,7 +1007,7 @@ function renderTotals(){
     }
   });
   var manualAmt=0;manualEntries.forEach(function(m){if(inRange(m.date)){manualAmt+=m.amount||0;totalAmt+=m.amount||0;}});
-  var bandArr=[];for(var k in bandAgg)bandArr.push(bandAgg[k]);bandArr.sort(function(a,b){return b.amount-a.amount;});
+  var bandArr=[];for(var k in bandAgg){bandAgg[k].id=k;bandArr.push(bandAgg[k]);}stableBandOrder(bandArr);
   var fp=totalAmt.toFixed(2).split('.'),fpInt=fp[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
   var html='<div class="pad-x" style="margin-top:14px;margin-bottom:12px"><div class="seg"><button class="'+(totalsRange==='month'?'on':'')+'" onclick="setTotalsRange(\'month\')">Month</button><button class="'+(totalsRange==='year'?'on':'')+'" onclick="setTotalsRange(\'year\')">Year</button><button class="'+(totalsRange==='all'?'on':'')+'" onclick="setTotalsRange(\'all\')">All time</button><button class="'+(totalsRange==='custom'?'on':'')+'" onclick="setTotalsRange(\'custom\')">Custom</button></div>';
   if(totalsRange==='custom'){
@@ -1134,7 +1146,7 @@ function buildListHTML(){
           }
           var bpMap={};
           dayEntries.forEach(function(e){if(e.type==='manual')return;(e.bands||[]).forEach(function(b){if(!bpMap[b.id])bpMap[b.id]={name:b.name,color:b.color,hours:0,amount:0};bpMap[b.id].hours+=b.hours;bpMap[b.id].amount+=b.amount;});});
-          var bpArr=[];for(var kk in bpMap)bpArr.push(bpMap[kk]);bpArr.sort(function(a,b){return b.amount-a.amount;});
+          var bpArr=[];for(var kk in bpMap){bpMap[kk].id=kk;bpArr.push(bpMap[kk]);}stableBandOrder(bpArr);
           if(bpArr.length){
             html+='<div class="band-pills">';
             bpArr.forEach(function(b){html+='<div class="band-pill" style="background:'+b.color+'18;color:'+b.color+'"><div class="bname">'+esc(b.name)+'</div><div class="bhrs">'+b.hours.toFixed(1)+'h</div><div class="bamt">'+fmtEUR(b.amount)+'</div></div>';});
