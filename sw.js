@@ -3,6 +3,8 @@ var ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './data/nchd_scales_june_2026.json',
+  './data/ie_public_holidays.json',
   './fonts/fraunces.woff2',
   './fonts/geist.woff2',
   './fonts/geist-mono.woff2',
