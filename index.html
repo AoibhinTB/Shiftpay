@@ -277,11 +277,6 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
           </div>
           <div class="tiny" style="margin-top:8px">Break is deducted from the band it falls within.</div>
         </div>
-        <div class="card" id="l-hse-type-card" style="display:none">
-          <div class="lbl" style="margin-bottom:8px">Shift type</div>
-          <div class="seg"><button id="l-hse-core" class="on" onclick="setHseType('core')">Rostered</button><button id="l-hse-ot" onclick="setHseType('ot')">Overtime on site</button></div>
-          <div class="tiny" style="margin-top:8px" id="l-hse-type-note">Rostered hours pay basic time. Sunday, public holiday and night premiums are applied automatically from the date and times.</div>
-        </div>
         <div class="card" id="l-bh-card">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Bank holiday</div><div class="tiny">Applies the bank holiday rate</div></div>
@@ -451,7 +446,7 @@ var onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null,bandEditSnapshot=null,pendingBackfill=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='',historyGroupMode='shifts';
 var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
-var logOffsite=false,logCallIns=[],logPreCall=false,logHseType='core';
+var logOffsite=false,logCallIns=[],logPreCall=false;
 // Editions: which product variant this device shows. A ?for= link (e.g.
 // ?for=locum) stamps the device once and is remembered, so the link is only
 // needed the first time. Editions gate UI visibility and default seeding,
@@ -663,7 +658,7 @@ function recomputeAllShifts(){
 // Basic hourly = annual salary point / 52.18 / 39 (39-hour contracted week).
 var HSE_WEEK_DIVISOR=52.18,HSE_WEEK_HOURS=39;
 var HSE_OT_MULT={weekday:1.5,sunday:2,ph:2}; // HR Circular 031/2021: 1.5 Mon-Sat, 2.0 Sun/PH
-var HSE_NIGHT_MULT=1.25,HSE_ED_PREMIUM=1/6;   // Contract s.11 night duty; s.10b ED rotating shift
+var HSE_ED_PREMIUM=1/6; // Contract s.10b ED rotating shift premium, core hours only
 var HSE_OFFSITE={base:0.5,protectedExtra:0.75,protectedCapH:10,sundayExtra:0.75,sundayCapH:8}; // s.13 + Appendix I
 var HSE_SCALES=null,IE_PH=[];
 function loadHseData(){
@@ -684,20 +679,17 @@ function hseHourly(gradeCode,point,ds){
   var arr=g.scales[chosen],idx=Math.min(Math.max(point||1,1),arr.length)-1;
   return{annual:arr[idx],hourly:arr[idx]/HSE_WEEK_DIVISOR/HSE_WEEK_HOURS,scaleEdition:chosen,grade:g.grade,gradeCode:gradeCode,point:idx+1};
 }
-// Night duty premium applies only when rostered through the night: at least
-// 3h of the duty falls between 00:00 and 07:00. Premium window is 20:00-08:00,
-// extended to 17:00-08:00 when the duty starts at 17:00 (Contract s.11).
-function hseNightInfo(startTod,totalMin){
-  var small=0;
-  for(var m=0;m<totalMin;m+=15){var tod=(startTod+m)%1440;if(tod<420)small+=15;}
-  return{qualifies:small>=180,winStart:startTod===1020?1020:1200};
+// Slot classification (Aoibhin's rostering model): standard hours are Mon-Thu
+// 09:00-17:00 and Fri 09:00-16:00; anything outside them is overtime. Sundays
+// and public holidays pay double time whether rostered or not, so no separate
+// shift-type input is needed.
+function hseSlotClass(dow,slotDS,tod){
+  if(isPublicHoliday(slotDS))return{label:'Public holiday',mult:HSE_OT_MULT.ph};
+  if(dow===6)return{label:'Sunday',mult:HSE_OT_MULT.sunday};
+  if((dow<=3&&tod>=540&&tod<1020)||(dow===4&&tod>=540&&tod<960))return{label:'Basic',mult:1,std:true};
+  return{label:'Overtime',mult:HSE_OT_MULT.weekday};
 }
-function hseInNightWindow(tod,night){return tod>=night.winStart||tod<480;}
-function hseOtSlot(dow,slotDS){
-  if(isPublicHoliday(slotDS))return{mult:HSE_OT_MULT.ph,label:'Overtime public holiday'};
-  if(dow===6)return{mult:HSE_OT_MULT.sunday,label:'Overtime Sunday'};
-  return{mult:HSE_OT_MULT.weekday,label:'Overtime'};
-}
+function hseSlips(){var p=hseProfile();var sl=(p&&p.slips)||{};return{core:sl.core||0,ot:sl.ot||0,offsite:sl.offsite||0};}
 // Weekly off-site formula (general form): every off-site hour earns 0.5T; the
 // protected hours (half of H, capped at 10) earn a further 0.75T; up to 8
 // Sunday hours earn a further 0.75T on top of whatever they already earn.
@@ -726,73 +718,74 @@ function hseSlotWalk(s,cb){
     cb(dow,dateStr(d2),tod,inCI,inBreak);
   }
 }
-var HSE_ROW_COLORS={'Basic':'#2563eb','Sunday':'#dc2626','Public holiday':'#d97706','Night':'#7c3aed','Overtime':'#b8632a','Overtime Sunday':'#b8632a','Overtime public holiday':'#b8632a','Called in':'#0891b2','Called in Sunday':'#0891b2','Called in public holiday':'#0891b2','On call off-site (0.5T)':'#0d9488','On call protected (+0.75T)':'#059669','Sunday call uplift (+0.75T)':'#f59e0b'};
-// Per-shift priceable rows. Off-site pool rows are added by hseRepriceWeeks;
-// here off-site shifts only price their call-in hours (paid instead of, not
-// on top of, the off-site rate - Contract s.13d read as replacement).
-function hsePriceShift(s){
-  var h=hseShiftHourly(s),rows={};
-  function add(name,rate,mins){
-    if(!rows[name])rows[name]={id:'hse_'+name.replace(/[^a-z0-9]+/gi,'_').toLowerCase(),name:name,color:HSE_ROW_COLORS[name]||'#0891b2',hours:0,amount:0,rate:rate,slip:0};
-    rows[name].hours+=mins/60;rows[name].amount+=rate*mins/60;
+var HSE_ROW_COLORS={'Basic':'#2563eb','Sunday':'#dc2626','Public holiday':'#d97706','Overtime':'#b8632a','ED premium':'#7c3aed','Called in':'#0891b2','On call off-site':'#0d9488'};
+// Rows a shift can price on its own (everything except the pooled off-site
+// figure, which hseRecomputeAll attaches per week). byDate=true buckets rows
+// per calendar date so overnight shifts split pay across the days they cover.
+function hseRowsWalk(s,byDate){
+  var h=hseShiftHourly(s),rows={},slips=hseSlips(),ed=!!(s.hse&&s.hse.ed);
+  function add(ds,name,rate,slip,mins){
+    var k=(byDate?ds+'|':'')+name;
+    if(!rows[k])rows[k]={ds:ds,id:'hse_'+name.replace(/[^a-z0-9]+/gi,'_').toLowerCase(),name:name,color:HSE_ROW_COLORS[name]||'#0891b2',hours:0,amount:0,rate:rate,slip:slip};
+    rows[k].hours+=mins/60;rows[k].amount+=rate*mins/60;
   }
-  var sMin=parseTime(s.start),eMin=parseTime(s.end);
-  if(sMin===null||eMin===null)return[];
-  var nextDay=s.endsNextDay||eMin<=sMin,totalMin=(eMin-sMin)+(nextDay?1440:0);
-  var night=hseNightInfo(sMin,totalMin);
-  var type=(s.hse&&s.hse.type)||'core',ed=!!(s.hse&&s.hse.ed);
   hseSlotWalk(s,function(dow,slotDS,tod,inCI,inBreak){
     if(inBreak)return;
+    var c=hseSlotClass(dow,slotDS,tod);
     if(s.offsite){
-      if(inCI){var ot=hseOtSlot(dow,slotDS);add(ot.label.replace('Overtime','Called in'),h*ot.mult,15);}
+      // Called-in time pays the s.12 overtime rate instead of the off-site
+      // rate; a call-in inside the standard window still prices as overtime.
+      if(inCI)add(slotDS,'Called in',h*(c.std?HSE_OT_MULT.weekday:c.mult),slips.ot,15);
       return;
     }
-    if(type==='ot'){var o=hseOtSlot(dow,slotDS);add(o.label,h*o.mult,15);return;}
-    var ph=isPublicHoliday(slotDS),sun=dow===6;
-    // Sunday/PH single-time-extra and the night premium do not stack here:
-    // the higher applies. ED shift premium adds 1/6 on core hours (s.10b).
-    var base=(ph||sun)?2:((night.qualifies&&hseInNightWindow(tod,night))?HSE_NIGHT_MULT:1);
-    var label=ph?'Public holiday':(sun?'Sunday':(base===HSE_NIGHT_MULT?'Night':'Basic'));
-    add(label,h*(base+(ed?HSE_ED_PREMIUM:0)),15);
+    add(slotDS,c.label,h*c.mult,c.std?slips.core:slips.ot,15);
+    if(ed&&c.std)add(slotDS,'ED premium',h*HSE_ED_PREMIUM,slips.ot,15);
   });
-  var out=[];for(var k in rows)out.push(rows[k]);
+  return rows;
+}
+function hsePriceShift(s){
+  var rows=hseRowsWalk(s,false),out=[];
+  for(var k in rows)out.push(rows[k]);
   out.sort(function(a,b){return b.amount-a.amount;});
   return out;
 }
-// Off-site pool for one shift: H hours (off-site minus call-ins) and how many
-// of them fall on the Sunday (midnight Sat to midnight Sun).
+// Off-site pool for one shift: hours per date, total H, Sunday hours S.
 function hseShiftPool(s){
-  var H=0,S=0;
-  hseSlotWalk(s,function(dow,slotDS,tod,inCI,inBreak){if(inBreak||inCI)return;H+=0.25;if(dow===6)S+=0.25;});
-  return{H:H,S:S};
+  var per={},H=0,S=0;
+  hseSlotWalk(s,function(dow,slotDS,tod,inCI,inBreak){if(inBreak||inCI)return;per[slotDS]=(per[slotDS]||0)+0.25;H+=0.25;if(dow===6)S+=0.25;});
+  return{per:per,H:H,S:S};
 }
-// Reprice every HSE shift, then pool off-site hours per Mon-Sun week and
-// attach the weekly formula's three components to the entries: the 0.5T line
-// exactly per entry, the protected and Sunday lines shared pro-rata.
+// Reprice every HSE shift, then pool off-site hours per Mon-Sun week. The
+// weekly formula has three parts internally, but each entry shows ONE on-call
+// figure: 0.5T on its own hours plus its pro-rata share of the protected and
+// Sunday extras.
 function hseRecomputeAll(){
   var weeks={};
   shifts.forEach(function(s){
     if(!s.hse)return;
     s.split=hsePriceShift(s);
-    delete s.dateSplit;
-    if(s.offsite){
-      var wk=weekKeyOf(s.date);
-      if(!weeks[wk])weeks[wk]=[];
-      var pool=hseShiftPool(s);
-      weeks[wk].push({s:s,H:pool.H,S:pool.S});
-    }
+    if(isOvernight(s.start,s.end)||s.endsNextDay){
+      var bd=hseRowsWalk(s,true),map={};
+      for(var k in bd){var r=bd[k];(map[r.ds]=map[r.ds]||[]).push(r);}
+      s.dateSplit=map;
+    }else delete s.dateSplit;
+    if(s.offsite){var wk=weekKeyOf(s.date);(weeks[wk]=weeks[wk]||[]).push({s:s,pool:hseShiftPool(s)});}
   });
   for(var wk in weeks){
-    var es=weeks[wk],totH=0,totS=0;
-    es.forEach(function(e){totH+=e.H;totS+=e.S;});
-    var protH=Math.min(totH/2,HSE_OFFSITE.protectedCapH),sunH=Math.min(totS,HSE_OFFSITE.sundayCapH);
+    var es=weeks[wk],totH=0,totS=0,slips=hseSlips();
+    es.forEach(function(e){totH+=e.pool.H;totS+=e.pool.S;});
+    var protT=Math.min(totH/2,HSE_OFFSITE.protectedCapH)*HSE_OFFSITE.protectedExtra;
+    var sunT=Math.min(totS,HSE_OFFSITE.sundayCapH)*HSE_OFFSITE.sundayExtra;
     es.forEach(function(e){
+      if(e.pool.H<=0)return;
       var h=hseShiftHourly(e.s);
-      if(e.H>0)e.s.split.push({id:'hse_oc_base',name:'On call off-site (0.5T)',color:HSE_ROW_COLORS['On call off-site (0.5T)'],hours:e.H,amount:h*HSE_OFFSITE.base*e.H,rate:h*HSE_OFFSITE.base,slip:0});
-      var pShare=totH>0?protH*(e.H/totH):0;
-      if(pShare>0)e.s.split.push({id:'hse_oc_prot',name:'On call protected (+0.75T)',color:HSE_ROW_COLORS['On call protected (+0.75T)'],hours:pShare,amount:h*HSE_OFFSITE.protectedExtra*pShare,rate:h*HSE_OFFSITE.protectedExtra,slip:0});
-      var sShare=totS>0?sunH*(e.S/totS):0;
-      if(sShare>0)e.s.split.push({id:'hse_oc_sun',name:'Sunday call uplift (+0.75T)',color:HSE_ROW_COLORS['Sunday call uplift (+0.75T)'],hours:sShare,amount:h*HSE_OFFSITE.sundayExtra*sShare,rate:h*HSE_OFFSITE.sundayExtra,slip:0});
+      var shareT=HSE_OFFSITE.base*e.pool.H+(totH>0?protT*(e.pool.H/totH):0)+(totS>0?sunT*(e.pool.S/totS):0);
+      var amount=h*shareT;
+      e.s.split.push({id:'hse_oncall',name:'On call off-site',color:HSE_ROW_COLORS['On call off-site'],hours:e.pool.H,amount:amount,rate:amount/e.pool.H,slip:slips.offsite});
+      if(e.s.dateSplit)for(var ds in e.pool.per){
+        var share=amount*(e.pool.per[ds]/e.pool.H);
+        (e.s.dateSplit[ds]=e.s.dateSplit[ds]||[]).push({id:'hse_oncall',name:'On call off-site',color:HSE_ROW_COLORS['On call off-site'],hours:e.pool.per[ds],amount:share,rate:share/e.pool.per[ds],slip:slips.offsite});
+      }
     });
   }
   shifts.forEach(function(s){
@@ -811,12 +804,7 @@ function setHsePoint(p){if(!settings.hse)return;settings.hse.point=parseInt(p)||
 function setHseEd(on){settings.hse=settings.hse||{point:1,hourlyOverride:null};settings.hse.ed=!!on;persist();refreshLog();}
 function setHseOverride(v){if(!settings.hse)return;var f=parseFloat(v);var auto=null;try{auto=+hseHourly(settings.hse.gradeCode,settings.hse.point||1,dateStr(new Date())).hourly.toFixed(2);}catch(e){}
   settings.hse.hourlyOverride=(isNaN(f)||f<=0||f===auto)?null:f;persist();renderBands();refreshLog();}
-function setHseType(t){logHseType=t;
-  var c=document.getElementById('l-hse-core'),o=document.getElementById('l-hse-ot');
-  if(c)c.className=t==='core'?'on':'';if(o)o.className=t==='ot'?'on':'';
-  var n=document.getElementById('l-hse-type-note');
-  if(n)n.textContent=t==='core'?'Rostered hours pay basic time. Sunday, public holiday and night premiums are applied automatically from the date and times.':'On call on site and other approved overtime. Pays 1.5 times basic Monday to Saturday, double time on Sundays and public holidays.';
-  refreshLog();}
+function setHseSlip(k,v){settings.hse=settings.hse||{};settings.hse.slips=settings.hse.slips||{};settings.hse.slips[k]=parseInt(v)||0;if(HSE_SCALES)hseRecomputeAll();persist();}
 function hseEditionLabel(d){if(!d)return'';var p=d.split('-');return new Date(+p[0],+p[1]-1,+p[2],12).toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'});}
 var HSE_DISCLAIMER_LINKS='<a target="_blank" rel="noopener" href="https://healthservice.hse.ie/documents/10686/1_June_2026_pay_scales.pdf">HSE Consolidated Salary Scales, 1 June 2026</a> · <a target="_blank" rel="noopener" href="https://www.imo.ie/i-am-a/nchd/nchd-contract/NCHD-Contract-2010-July-2020.pdf">NCHD Contract 2010 (July 2020)</a> · <a target="_blank" rel="noopener" href="https://www.hse.ie/eng/staff/resources/hr-circulars/hr-circular-031-2021-revised-arrangements-re-compensation-for-overtime-and-twilight-payments-in-the-public-health-sector-restoration-of-the-tool-allowance-to-pre-hra-level-.pdf">HR Circular 031/2021</a> · <a target="_blank" rel="noopener" href="https://www.hse.ie/eng/staff/resources/hr-circulars/hr-circular-016-2023-appendix-a-revised-.pdf">HR Circular 016/2023</a>';
 function hseDisclaimerShort(ed){return'Estimate — HSE scale '+hseEditionLabel(ed||'2026-06-01')+', NCHD Contract 2010 (July 2020). Check against your payslip.';}
@@ -838,14 +826,25 @@ function hseSetupHTML(){
     html+='<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:2px 0"><input type="checkbox" '+(p.ed?'checked':'')+' onchange="setHseEd(this.checked)" style="accent-color:var(--blue)"><span style="font-size:13px">Emergency Department rotating shift (adds 1/6 to rostered hours)</span></label>';
   }
   html+='</div></div>';
+  html+='<div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;margin:20px 0 8px">Paid on payslip</div>';
+  html+='<div class="band-card"><div style="padding:13px 16px">';
+  var sl=hseSlips();
+  [['core','Basic pay'],['ot','Overtime and premiums'],['offsite','Off-site call']].forEach(function(rowc){
+    html+='<div class="field" style="margin-bottom:10px"><label class="lbl">'+rowc[1]+'</label><select onchange="setHseSlip(\''+rowc[0]+'\',this.value)">';
+    [['0','Same payslip'],['1','Next payslip'],['2','2 payslips later']].forEach(function(o){html+='<option value="'+o[0]+'"'+(String(sl[rowc[0]])===o[0]?' selected':'')+'>'+o[1]+'</option>';});
+    html+='</select></div>';
+  });
+  html+='<div class="tiny">Sites differ on what is paid in arrears. Match these to your payslip and each part will land on the right payslip.</div>';
+  html+='</div></div>';
   html+='<div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;margin:20px 0 8px">About the HSE estimate</div>';
   html+='<div class="band-card"><div class="tiny" style="padding:13px 16px;line-height:1.6">';
   html+=hseDisclaimerShort()+'<br><br>What the app assumes:<br>';
-  html+='• Overtime is what you log as overtime. The contract measures overtime as hours over 39 a week averaged across a 4-week roster; the app does not model that averaging.<br>';
+  html+='• Standard hours are Monday to Thursday 09:00 to 17:00 and Friday 09:00 to 16:00. Hours outside them price as overtime, 1.5 times basic Monday to Saturday. Sundays and public holidays pay double time.<br>';
+  html+='• The contract measures overtime as hours over 39 a week averaged across a 4-week roster; the app prices what you log and does not model that averaging.<br>';
+  html+='• Off-site call is pooled per Monday to Sunday week and shown as one figure per shift. Under the hood it pays half time on every hour, plus three quarter time on half your hours up to 10, plus three quarter time on up to 8 Sunday hours.<br>';
   html+='• During a call-in, off-site call pay is replaced by the overtime rate for those hours, not paid on top.<br>';
-  html+='• Public holidays during off-site call get no extra uplift; the contract only provides the Sunday uplift.<br>';
-  html+='• Where a Sunday or public holiday overlaps the night premium on rostered hours, the higher rate applies.<br>';
-  html+='• Pay is attributed to the day the shift starts.<br><br>';
+  html+='• Public holidays for 2026 and 2027 are built in and applied automatically, midnight to midnight. There is no extra public holiday uplift on off-site call hours.<br>';
+  html+='• Overnight shifts split their pay across the days they cover.<br><br>';
   html+='Sources: '+HSE_DISCLAIMER_LINKS+'</div></div>';
   return html;
 }
@@ -853,7 +852,7 @@ function hseDraftFromLog(date,start,end,breakMin,breakStart){
   var p=hseProfile();
   var info=p&&p.gradeCode?hseHourly(p.gradeCode,p.point||1,date):null;
   var hourly=p&&p.hourlyOverride!=null?p.hourlyOverride:(info?info.hourly:0);
-  var d={id:-1,date:date,start:start,end:end,breakMin:breakMin,breakStart:breakStart,endsNextDay:logEndsNextDay,bh:false,bhDates:[],hse:{type:logHseType,ed:!!(p&&p.ed),hourly:hourly,gradeCode:p?p.gradeCode:null,point:p?(p.point||1):null,annual:info?info.annual:null,scaleEdition:info?info.scaleEdition:null,hse_scale_edition:info?info.scaleEdition:null}};
+  var d={id:-1,date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:logEndsNextDay,bh:false,bhDates:[],hse:{ed:!!(p&&p.ed),hourly:hourly,gradeCode:p?p.gradeCode:null,point:p?(p.point||1):null,annual:info?info.annual:null,scaleEdition:info?info.scaleEdition:null,hse_scale_edition:info?info.scaleEdition:null}};
   if(logOffsite){
     var eff=logEffCallIns(start);
     if(eff.err)return{err:eff.err};
@@ -881,8 +880,8 @@ function refreshLogHSE(date,start,end,breakMin,breakStart,bkEl,saveBtn){
     var after=hseOffsiteWeekPay(d.hse.hourly,baseH+mine.H,baseS+mine.S);
     var marginal=after.amount-before;
     total+=marginal;
-    if(mine.H>0)rows=rows.concat([{name:'On call off-site (week share)',color:'#0d9488',hours:mine.H,amount:marginal,rate:mine.H>0?marginal/mine.H:0}]);
-    weekNote='<div class="tiny" style="margin-top:10px">This Mon–Sun week: '+(baseH+mine.H).toFixed(1)+'h off-site. Half time on every hour, three-quarter time extra on '+after.protectedHours.toFixed(1)+' protected hours'+(after.sundayHours>0?' and on '+after.sundayHours.toFixed(1)+' Sunday hours':'')+'. Time called in pays the overtime rate instead.</div>';
+    if(mine.H>0)rows=rows.concat([{name:'On call off-site',color:'#0d9488',hours:mine.H,amount:marginal,rate:mine.H>0?marginal/mine.H:0}]);
+    weekNote='<div class="tiny" style="margin-top:10px">This Mon to Sun week: '+(baseH+mine.H).toFixed(1)+'h on call off-site, paying '+fmtEUR(after.amount)+' for the week under the HSE call formula. Time called in pays overtime instead.</div>';
   }
   if(bkEl){
     var parts=total.toFixed(2).split('.'),fmted=parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
@@ -1104,13 +1103,12 @@ function setLogOffsite(on){
   logOffsite=!!on;
   var btn=document.getElementById('l-offsite-toggle');if(btn)btn.className='toggle'+(logOffsite?' on':'');
   var ciBlock=document.getElementById('l-callins');if(ciBlock)ciBlock.style.display=logOffsite?'block':'none';
-  var brkCard=document.getElementById('l-break-card');if(brkCard)brkCard.style.display=logOffsite?'none':'block';
+  var brkCard=document.getElementById('l-break-card');if(brkCard)brkCard.style.display=(logOffsite||edHSE())?'none':'block';
   if(logOffsite){var bd=document.getElementById('l-break-dur');if(bd)bd.value='0';var bs=document.getElementById('l-break-start');if(bs)bs.value='';}
   logPreCall=false;
   var pt=document.getElementById('l-precall-toggle');if(pt)pt.className='toggle';
   var pr=document.getElementById('l-precall-row');if(pr)pr.style.display='none';
   var cf=document.getElementById('l-callfrom');if(cf)cf.value='';
-  var ht=document.getElementById('l-hse-type-card');if(ht&&edHSE())ht.style.display=logOffsite?'none':'block';
   renderCallIns();
 }
 function toggleOffsite(){setLogOffsite(!logOffsite);refreshLog();}
@@ -1668,7 +1666,7 @@ function buildEditFormHTML(s){
   html+='<div class="edit-form" style="padding:16px 24px">';
   html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Date</label><input type="date" id="ed-date-'+s.id+'" value="'+s.date+'" onchange="refreshEditBK('+s.id+')"></div>';
   html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Start</label><input type="time" id="ed-start-'+s.id+'" value="'+s.start+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div><div class="field"><label class="lbl">End</label><input type="time" id="ed-end-'+s.id+'" value="'+s.end+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
-  html+='<div class="row-2" id="ed-brk-row-'+s.id+'" style="margin-bottom:10px'+(s._editOffsite?';display:none':'')+'"><div class="field"><label class="lbl">Break</label><select id="ed-brk-'+s.id+'" onchange="refreshEditBK('+s.id+')"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">2 hours</option></select></div><div class="field"><label class="lbl">Break Start</label><input type="time" id="ed-brkst-'+s.id+'" value="'+(s.breakStart||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
+  html+='<div class="row-2" id="ed-brk-row-'+s.id+'" style="margin-bottom:10px'+((s._editOffsite||s.hse)?';display:none':'')+'"><div class="field"><label class="lbl">Break</label><select id="ed-brk-'+s.id+'" onchange="refreshEditBK('+s.id+')"><option value="0">None</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">2 hours</option></select></div><div class="field"><label class="lbl">Break Start</label><input type="time" id="ed-brkst-'+s.id+'" value="'+(s.breakStart||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
   var bhInit=(s.bhDates&&s.bhDates.length>0)||s.bh;
   html+='<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(bhInit?'checked':'')+' onchange="onEditBHToggle('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-end1-'+s.id+'" '+(s.endsNextDay?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Ends next day</span></label>';
   if(edCall()||edHSE()||s.offsite)html+='<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-off-'+s.id+'" '+(s._editOffsite?'checked':'')+' onchange="onEditOffsiteToggle('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Off-site call</span></label>';
@@ -1802,7 +1800,7 @@ function refreshEditBK(id){
     callOpts={offsite:true,callIns:eff.list||[]};
   }
   if(s&&s.hse){
-    var hDraft={date:date,start:start,end:end,breakMin:breakMin,breakStart:breakStart,endsNextDay:ende,hse:s.hse};
+    var hDraft={date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:ende,hse:s.hse};
     if(s._editOffsite){hDraft.offsite=true;hDraft.callIns=(callOpts&&callOpts.callIns)||[];hDraft.breakMin=0;hDraft.breakStart='';}
     var hRows=hsePriceShift(hDraft),hTot=hRows.reduce(function(t,b){return t+b.amount;},0);
     var hHtml='<div style="padding:8px 0;border-top:1px solid var(--line-soft)">';
@@ -1846,7 +1844,7 @@ function saveEdit(id){
     callOpts={offsite:true,callIns:cleanCIs};
   }
   if(s.hse){
-    Object.assign(s,{date:date,start:start,end:end,bh:false,bhDates:[],endsNextDay:ende,breakMin:offsite?0:breakMin,breakStart:offsite?'':breakStart});
+    Object.assign(s,{date:date,start:start,end:end,bh:false,bhDates:[],endsNextDay:ende,breakMin:0,breakStart:''});
     if(offsite){s.offsite=true;s.callIns=cleanCIs;}else{delete s.offsite;delete s.callIns;}
     // Date may have moved across a scale boundary: refresh the stored rate
     // unless the profile has a manual override.
@@ -2399,7 +2397,7 @@ if(!edCall()){
 }
 if(edHSE()){
   var bhCard=document.getElementById('l-bh-card');if(bhCard)bhCard.style.display='none';
-  var htCard=document.getElementById('l-hse-type-card');if(htCard)htCard.style.display='block';
+  var brkCardH=document.getElementById('l-break-card');if(brkCardH)brkCardH.style.display='none';
   var bandsHdrT=document.getElementById('bands-hdr-title');if(bandsHdrT)bandsHdrT.textContent='Your pay';
   var bandsHdrA=document.getElementById('bands-hdr-add');if(bandsHdrA)bandsHdrA.style.display='none';
 }
@@ -2616,18 +2614,23 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
     var s4=mk('2026-07-19','10:00','11:00');
     t('H4','Core Sunday hour pays 2x',+(2*h).toFixed(2),+tot(s4).toFixed(2),approx(tot(s4),2*h));
     var sp5=hsePriceShift(mk('2026-07-15','20:00','08:00'));
-    var night5=sp5.filter(function(r){return r.name==='Night';})[0];
-    t('H5','Core Wed 20:00-08:00 qualifies as night duty: 12h at 1.25x',{hours:12,amount:+(12*1.25*h).toFixed(2)},{hours:night5?night5.hours:0,amount:night5?+night5.amount.toFixed(2):0},!!night5&&night5.hours===12&&approx(night5.amount,12*1.25*h,0.02));
+    var ot5=sp5.filter(function(r){return r.name==='Overtime';})[0];
+    t('H5','Wed 20:00-08:00 is outside standard hours: 12h overtime at 1.5x',{hours:12,amount:+(12*1.5*h).toFixed(2)},{hours:ot5?ot5.hours:0,amount:ot5?+ot5.amount.toFixed(2):0},!!ot5&&ot5.hours===12&&approx(ot5.amount,12*1.5*h,0.02));
     var sp5b=hsePriceShift(mk('2026-07-15','16:00','00:00'));
-    t('H5b','Twilight 16:00-00:00 does not qualify for the night premium (under 3h in 00:00-07:00)',0,sp5b.filter(function(r){return r.name==='Night';}).length,sp5b.filter(function(r){return r.name==='Night';}).length===0);
+    var b5b=sp5b.filter(function(r){return r.name==='Basic';})[0],o5b=sp5b.filter(function(r){return r.name==='Overtime';})[0];
+    t('H5b','Wed 16:00-00:00 splits at 17:00: 1h basic + 7h overtime',{basic:1,ot:7},{basic:b5b?b5b.hours:0,ot:o5b?o5b.hours:0},!!b5b&&!!o5b&&b5b.hours===1&&o5b.hours===7);
     var s6=mk('2026-07-15','09:00','10:00');s6.hse.ed=true;
-    t('H6','ED rotating-shift flag adds 1/6 to a core weekday hour',+((1+1/6)*h).toFixed(2),+tot(s6).toFixed(2),approx(tot(s6),(1+1/6)*h));
-    var s6b=mk('2026-07-15','09:00','11:00');s6b.hse.type='ot';s6b.hse.ed=true;
+    t('H6','ED rotating-shift flag adds 1/6 to a standard weekday hour',+((1+1/6)*h).toFixed(2),+tot(s6).toFixed(2),approx(tot(s6),(1+1/6)*h));
+    var s6b=mk('2026-07-15','20:00','22:00');s6b.hse.ed=true;
     t('H6b','ED flag does not apply to overtime hours',+(3*h).toFixed(2),+tot(s6b).toFixed(2),approx(tot(s6b),3*h));
-    var s7=mk('2026-07-15','09:00','11:00');s7.hse.type='ot';
-    t('H7','Overtime 2h Wednesday pays 2 x 1.5T',+(3*h).toFixed(2),+tot(s7).toFixed(2),approx(tot(s7),3*h));
-    var s8=mk('2026-07-19','09:00','11:00');s8.hse.type='ot';
-    t('H8','Overtime 2h Sunday pays 2 x 2T',+(4*h).toFixed(2),+tot(s8).toFixed(2),approx(tot(s8),4*h));
+    var s7=mk('2026-07-15','19:00','21:00');
+    t('H7','2h Wednesday evening prices as overtime, 2 x 1.5T',+(3*h).toFixed(2),+tot(s7).toFixed(2),approx(tot(s7),3*h));
+    var s7b=mk('2026-07-17','16:00','18:00');
+    t('H7b','Friday standard ends 16:00: 16:00-18:00 is 2h overtime',+(3*h).toFixed(2),+tot(s7b).toFixed(2),approx(tot(s7b),3*h));
+    var s7c=mk('2026-07-16','16:00','17:00');
+    t('H7c','Thursday 16:00-17:00 is still basic time',+h.toFixed(2),+tot(s7c).toFixed(2),approx(tot(s7c),h));
+    var s8=mk('2026-07-19','09:00','11:00');
+    t('H8','2h Sunday pays double time',+(4*h).toFixed(2),+tot(s8).toFixed(2),approx(tot(s8),4*h));
     var w=hseOffsiteWeekPay(h,54,9);
     t('H9','Worked example H=54 S=9: 40.5 T-hours, about 1100',{tHours:40.5,amount:1100},{tHours:w.tHours,amount:+w.amount.toFixed(2)},w.tHours===40.5&&Math.abs(w.amount-1100)<=1);
     var collapsed=h*(0.5*54+7.5+0.75*Math.min(9,8));
@@ -2652,8 +2655,21 @@ initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
     var expect=w.amount+2*1.5*h;
     t('H13','Worked example via logged shifts: pooled week + call-in',+expect.toFixed(2),+weekTotal.toFixed(2),Math.abs(weekTotal-expect)<=0.05);
     var sat=shifts[2];
-    var sunRow=sat.split.filter(function(r){return r.id==='hse_oc_sun';})[0];
-    t('H13b','Sunday uplift lands on the Sat-Sun entry, capped at 8h',8,sunRow?+sunRow.hours.toFixed(2):0,!!sunRow&&approx(sunRow.hours,8,0.01));
+    var ocRow=sat.split.filter(function(r){return r.id==='hse_oncall';})[0];
+    var expSat=h*(0.5*24+7.5*(24/54)+6);
+    t('H13b','Sat-Sun entry shows one on-call figure including its Sunday share',+expSat.toFixed(2),ocRow?+ocRow.amount.toFixed(2):0,!!ocRow&&approx(ocRow.amount,expSat,0.05));
+    var wedDS=shifts[1].dateSplit||{};
+    var wedDays=Object.keys(wedDS).sort();
+    t('H13c','Overnight entries split pay across both days',['2026-07-15','2026-07-16'].join(','),wedDays.join(','),wedDays.length===2&&wedDays[0]==='2026-07-15'&&wedDays[1]==='2026-07-16');
+    var wedTotal=0;for(var wd in wedDS)wedDS[wd].forEach(function(r){wedTotal+=r.amount;});
+    t('H13d','Per-day split sums to the shift total',+shifts[1].tp.toFixed(2),+wedTotal.toFixed(2),approx(wedTotal,shifts[1].tp,0.02));
+    var prevHse=settings.hse;
+    settings.hse={gradeCode:'1012',point:1,ed:false,slips:{core:0,ot:1,offsite:2}};
+    hseRecomputeAll();
+    var slipOT=(shifts[1].split.filter(function(r){return r.name==='Called in';})[0]||{}).slip;
+    var slipOC=(shifts[1].split.filter(function(r){return r.id==='hse_oncall';})[0]||{}).slip;
+    t('H14','Arrears settings route overtime and call to later payslips',{ot:1,offsite:2},{ot:slipOT,offsite:slipOC},slipOT===1&&slipOC===2);
+    settings.hse=prevHse;
     shifts=prevShifts;edition=prevEdition;
     return R;
   }
