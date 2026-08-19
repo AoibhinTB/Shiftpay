@@ -1,0 +1,66 @@
+{
+  "_meta": {
+    "source": "Department of Health Consolidated Salary Scales, 1 June 2026 (read with DoH Circular 2/2026)",
+    "source_url": "https://healthservice.hse.ie/documents/10686/1_June_2026_pay_scales.pdf",
+    "index_page": "https://healthservice.hse.ie/staff/pay/pay-scales/",
+    "section": "Medical & Dental Grades, pp 5-7 of the PDF",
+    "currency": "EUR",
+    "figures_are": "annual basic salary per incremental point",
+    "extracted": "2026-08-17",
+    "notes": [
+      "Two effective-date rows per grade: 1/6/26 is current; 1/2/26 is the prior rate (kept so shifts before 1 June 2026 can be priced correctly).",
+      "'FOR PENSION PURPOSES' duplicate rows (retirees before 1 July 2017) are deliberately excluded - they are not pay scales for serving NCHDs.",
+      "Weekly rate = annual / 52.18 (stated in the Guide to the Scales inside the PDF).",
+      "Basic hourly for NCHDs = weekly / 39 (39-hour basic week under the NCHD contract) - CONFIRM this divisor against the NCHD contract before shipping; some grades elsewhere in the HSE use 37.5.",
+      "Verify every figure against the PDF before release - this was hand-transcribed from the extracted text."
+    ]
+  },
+  "grades": [
+    {
+      "grade_code": "1554",
+      "grade": "Intern",
+      "points": 1,
+      "scales": {
+        "2026-06-01": [47127],
+        "2026-02-01": [46660]
+      },
+      "note": "Payment may also be made for up to 5 days induction, pro rata if shorter."
+    },
+    {
+      "grade_code": "1012",
+      "grade": "Senior House Officer",
+      "points": 7,
+      "scales": {
+        "2026-06-01": [55292, 58011, 62123, 64832, 70276, 72982, 75623],
+        "2026-02-01": [54745, 57437, 61508, 64190, 69580, 72259, 74874]
+      }
+    },
+    {
+      "grade_code": "1538",
+      "grade": "Registrar",
+      "points": 6,
+      "scales": {
+        "2026-06-01": [70276, 72982, 75623, 77567, 80157, 82756],
+        "2026-02-01": [69580, 72259, 74874, 76799, 79363, 81937]
+      }
+    },
+    {
+      "grade_code": "1628",
+      "grade": "Specialist Registrar",
+      "points": 7,
+      "scales": {
+        "2026-06-01": [78786, 80651, 83341, 85782, 89883, 93989, 98091],
+        "2026-02-01": [78006, 79852, 82516, 84933, 88993, 93058, 97120]
+      }
+    },
+    {
+      "grade_code": "1627",
+      "grade": "Senior Registrar",
+      "points": 7,
+      "scales": {
+        "2026-06-01": [83847, 86520, 89249, 92156, 95515, 99011, 102619],
+        "2026-02-01": [83017, 85663, 88365, 91244, 94569, 98031, 101603]
+      }
+    }
+  ]
+}
