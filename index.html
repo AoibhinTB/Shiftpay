@@ -310,9 +310,9 @@ details[open] summary .chev{transform:rotate(90deg)}
               <button class="toggle" id="l-precall-toggle" onclick="togglePreCall()" style="transform:scale(0.78);transform-origin:right center"></button>
             </div>
             <div id="l-precall-row" style="display:none;margin-bottom:10px">
-              <div class="field"><label class="lbl" style="font-size:9.5px">On call from</label><input type="text" id="l-callfrom" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()"></div>
+              <div class="field"><label class="lbl" style="font-size:9.5px">Off-site call from</label><input type="text" id="l-callfrom" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()"></div>
             </div>
-            <div class="lbl" style="margin-bottom:8px">Called in?</div>
+            <div class="lbl" id="l-ci-lbl" style="margin-bottom:8px">Called in?</div>
             <div id="l-callin-rows"></div>
             <button class="btn-ghost" onclick="addCallIn()">+ Add call in</button>
           </div>
@@ -352,8 +352,8 @@ details[open] summary .chev{transform:rotate(90deg)}
       <div class="pad-x">
         <div class="card"><div class="tiny" style="line-height:1.6">Everything you enter stays on your device. There are no accounts, no external database, and nothing is sent anywhere or shared with anyone. No tracking.</div></div>
       </div>
-      <div class="sect-hdr"><h2>How pay is calculated</h2></div>
-      <div class="pad-x">
+      <div class="sect-hdr" id="hpc-hdr"><h2>How pay is calculated</h2></div>
+      <div class="pad-x" id="hpc-container">
         <div class="card"><div class="tiny" style="line-height:1.6">Bands with a higher rate take priority where they overlap. <span id="hpc-call">Off-site call shifts pay your call rates, and time worked on site pays whichever pay band covers that time. Breaks do not apply to call shifts. </span>Shows gross pay only. Tax, USC, PRSI and pension are not deducted.</div></div>
       </div>
       <div style="height:20px"></div>
@@ -868,8 +868,7 @@ function setHseOverride(v){if(!settings.hse)return;var f=parseFloat(v);var auto=
 function setHseSlip(k,v){settings.hse=settings.hse||{};settings.hse.slips=settings.hse.slips||{};settings.hse.slips[k]=parseInt(v)||0;if(HSE_SCALES)hseRecomputeAll();persist();}
 function toggleNightCore(){logNightCore=!logNightCore;var b=document.getElementById('l-nightcore-toggle');if(b)b.className='toggle'+(logNightCore?' on':'');refreshLog();}
 function hseEditionLabel(d){if(!d)return'';var p=d.split('-');return new Date(+p[0],+p[1]-1,+p[2],12).toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'});}
-var HSE_DISCLAIMER_LINKS='<a target="_blank" rel="noopener" href="https://healthservice.hse.ie/documents/10686/1_June_2026_pay_scales.pdf">HSE Consolidated Salary Scales, 1 June 2026</a> · <a target="_blank" rel="noopener" href="https://www.imo.ie/i-am-a/nchd/nchd-contract/NCHD-Contract-2010-July-2020.pdf">NCHD Contract 2010 (July 2020)</a> · <a target="_blank" rel="noopener" href="https://www.hse.ie/eng/staff/resources/hr-circulars/hr-circular-031-2021-revised-arrangements-re-compensation-for-overtime-and-twilight-payments-in-the-public-health-sector-restoration-of-the-tool-allowance-to-pre-hra-level-.pdf">HR Circular 031/2021</a> · <a target="_blank" rel="noopener" href="https://www.hse.ie/eng/staff/resources/hr-circulars/hr-circular-016-2023-appendix-a-revised-.pdf">HR Circular 016/2023</a>';
-function hseDisclaimerShort(ed){return'Estimate — HSE scale '+hseEditionLabel(ed||'2026-06-01')+', NCHD Contract 2010 (July 2020). Check against your payslip.';}
+function hseDisclaimerShort(ed){return'Estimate: HSE scale '+hseEditionLabel(ed||'2026-06-01')+', NCHD Contract 2010 (July 2020). Check against your payslip.';}
 function hseSetupHTML(){
   if(!HSE_SCALES)return'<div class="tiny" style="padding:12px 0">Loading HSE pay scales…</div>';
   var p=hseProfile()||{};
@@ -898,8 +897,12 @@ function hseSetupHTML(){
   });
   html+='<div class="tiny">Sites differ on what is paid in arrears. Match these to your payslip. Shifts remember the setting they were logged under, so changing this only affects new shifts.</div>';
   html+='</div></div>';
+  return html;
+}
+function hseExplainerHTML(){
+  var p=hseProfile()||{};
   var rateBullet='Your hourly rate is your annual salary point divided by 52.18 weeks and then by 39 hours.';
-  if(p.gradeCode&&hseGrade(p.gradeCode)){
+  if(HSE_SCALES&&p.gradeCode&&hseGrade(p.gradeCode)){
     var i2=hseHourly(p.gradeCode,p.point||1,dateStr(new Date()));
     rateBullet+=' For you: €'+i2.annual.toLocaleString('en-IE')+' ÷ 52.18 ÷ 39 = €'+i2.hourly.toFixed(2)+'/hr, HSE scale '+hseEditionLabel(i2.scaleEdition)+'.';
   }
@@ -914,14 +917,13 @@ function hseSetupHTML(){
     'Public holidays for 2026 and 2027 are built in and applied automatically, midnight to midnight. There is no extra public holiday uplift on off-site call hours.',
     'Overnight shifts split their pay across the days they cover.'
   ];
-  html+='<div class="band-card" style="margin-top:20px"><details>';
+  var html='<div class="band-card" style="margin-bottom:8px"><details>';
   html+='<summary style="padding:13px 16px;font-size:14.5px;font-weight:700;display:flex;justify-content:space-between;align-items:center">How your pay is worked out<div class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div></summary>';
   html+='<div class="tiny" style="padding:0 16px 13px;line-height:1.6;border-top:1px solid var(--line-soft)">';
   html+='<div style="margin-top:10px">'+hseDisclaimerShort()+'</div>';
   html+='<ul style="margin:10px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:8px">';
   bullets.forEach(function(b){html+='<li>'+b+'</li>';});
   html+='</ul>';
-  html+='<div style="margin-top:12px">Sources: '+HSE_DISCLAIMER_LINKS+'</div>';
   html+='</div></details></div>';
   return html;
 }
@@ -972,7 +974,7 @@ function refreshLogHSE(date,start,end,breakMin,breakStart,bkEl,saveBtn){
       html+='</div>';
     }
     html+=weekNote;
-    html+='<div class="tiny" style="margin-top:10px;opacity:.8">'+hseDisclaimerShort(d.hse.scaleEdition)+'</div>';
+    html+='<div class="tiny" style="margin-top:10px;opacity:.8">Estimate - check against your payslip.</div>';
     html+='</div>';
     bkEl.innerHTML=html;
   }
@@ -1203,8 +1205,8 @@ function togglePreCall(){
 function logEffCallIns(start){
   if(!logPreCall)return{list:logCallIns};
   var cfEl=document.getElementById('l-callfrom'),cf=cfEl?cfEl.value:'';
-  if(!validTime(cf))return{err:'Add the time your call started.'};
-  if(parseTime(cf)===parseTime(start))return{err:'On call from matches the shift start.'};
+  // An empty or unchanged time just means no worked-before segment yet.
+  if(!validTime(cf)||parseTime(cf)===parseTime(start))return{list:logCallIns};
   return{list:[{start:start,end:cf}].concat(logCallIns)};
 }
 function addCallIn(){logCallIns.push({start:'',end:''});renderCallIns();refreshLog();}
@@ -1213,7 +1215,7 @@ function updateCallIn(i,f,v){if(logCallIns[i]){logCallIns[i][f]=v;refreshLog();}
 function renderCallIns(){
   var el=document.getElementById('l-callin-rows');if(!el)return;
   var html='';
-  if(!logCallIns.length)html+='<div class="tiny" style="margin-bottom:8px">If you were called in to work, add those times. They pay whichever pay band covers that time of day.</div>';
+  if(!logCallIns.length&&!edHSE())html+='<div class="tiny" style="margin-bottom:8px">If you were called in to work, add those times. They pay whichever pay band covers that time of day.</div>';
   for(var i=0;i<logCallIns.length;i++){
     var ci=logCallIns[i];
     html+='<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">';
@@ -1766,7 +1768,7 @@ function renderEditCallIns(id){
   var list=s._editCallIns||[];
   var html='<div style="margin:-2px 0 10px">';
   html+='<label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:8px"><input type="checkbox" '+(s._editPreCall?'checked':'')+' onchange="onEditPreCallToggle('+id+',this.checked)" style="accent-color:var(--blue)"><span style="font-size:13px">Worked on site before call started</span></label>';
-  if(s._editPreCall)html+='<div class="field" style="margin-bottom:10px"><label class="lbl" style="font-size:9.5px">On call from</label><input type="time" value="'+esc(s._editCallFrom||'')+'" onchange="updateEditCallFrom('+id+',this.value)" oninput="updateEditCallFrom('+id+',this.value)"></div>';
+  if(s._editPreCall)html+='<div class="field" style="margin-bottom:10px"><label class="lbl" style="font-size:9.5px">Off-site call from</label><input type="time" value="'+esc(s._editCallFrom||'')+'" onchange="updateEditCallFrom('+id+',this.value)" oninput="updateEditCallFrom('+id+',this.value)"></div>';
   html+='<div class="lbl" style="margin-bottom:6px">Called in?</div>';
   for(var j=0;j<list.length;j++){
     html+='<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">';
@@ -1785,8 +1787,7 @@ function onEditPreCallToggle(id,on){var s=null;for(var i=0;i<shifts.length;i++)i
 function updateEditCallFrom(id,v){var s=null;for(var i=0;i<shifts.length;i++)if(shifts[i].id===id){s=shifts[i];break;}if(!s)return;s._editCallFrom=v;refreshEditBK(id);}
 function editEffCallIns(s,start){
   if(!s._editPreCall)return{list:(s._editCallIns||[]).slice()};
-  if(!validTime(s._editCallFrom))return{err:'Add the time your call started.'};
-  if(parseTime(s._editCallFrom)===parseTime(start))return{err:'On call from matches the shift start.'};
+  if(!validTime(s._editCallFrom)||parseTime(s._editCallFrom)===parseTime(start))return{list:(s._editCallIns||[]).slice()};
   return{list:[{start:start,end:s._editCallFrom}].concat(s._editCallIns||[])};
 }
 function onEditOffsiteToggle(id){
@@ -1994,7 +1995,7 @@ function buildCalendarHTML(){
 
 function renderBands(){
   var el=document.getElementById('band-list');if(!el)return;
-  if(edHSE()){el.innerHTML=hseSetupHTML();return;}
+  if(edHSE()){el.innerHTML=hseSetupHTML();var hh=document.getElementById('hpc-hdr');if(hh)hh.style.display='none';var hc=document.getElementById('hpc-container');if(hc)hc.innerHTML=hseExplainerHTML();return;}
   var sorted=bands.slice().sort(function(a,b){return(b.rate||0)-(a.rate||0);});
   var html='';
   function bandCardHTML(b){
@@ -2504,6 +2505,7 @@ if(edHSE()){
   var bhCard=document.getElementById('l-bh-card');if(bhCard)bhCard.style.display='none';
   var brkCardH=document.getElementById('l-break-card');if(brkCardH)brkCardH.style.display='none';
   var ncCardH=document.getElementById('l-nightcore-card');if(ncCardH)ncCardH.style.display='block';
+  var ciLbl=document.getElementById('l-ci-lbl');if(ciLbl)ciLbl.style.display='none';
   var bandsHdrT=document.getElementById('bands-hdr-title');if(bandsHdrT)bandsHdrT.textContent='Your pay';
   var bandsHdrA=document.getElementById('bands-hdr-add');if(bandsHdrA)bandsHdrA.style.display='none';
 }
