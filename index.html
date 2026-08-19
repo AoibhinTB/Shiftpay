@@ -752,7 +752,10 @@ var HSE_ROW_COLORS={'Basic':'#2563eb','Sunday':'#dc2626','Public holiday':'#d977
 // figure, which hseRecomputeAll attaches per week). byDate=true buckets rows
 // per calendar date so overnight shifts split pay across the days they cover.
 function hseRowsWalk(s,byDate){
-  var h=hseShiftHourly(s),rows={},slips=hseSlips(),ed=!!(s.hse&&s.hse.ed);
+  // Arrears routing is snapshotted onto the shift at save time, like the rate
+  // and shift-work flag, so changing the settings only affects new shifts.
+  // Shifts saved before snapshots existed fall back to the live settings.
+  var h=hseShiftHourly(s),rows={},slips=(s.hse&&s.hse.slips)||hseSlips(),ed=!!(s.hse&&s.hse.ed);
   function add(ds,name,rate,slip,mins){
     var k=(byDate?ds+'|':'')+name;
     if(!rows[k])rows[k]={ds:ds,id:'hse_'+name.replace(/[^a-z0-9]+/gi,'_').toLowerCase(),name:name,color:HSE_ROW_COLORS[name]||'#0891b2',hours:0,amount:0,rate:rate,slip:slip};
@@ -817,7 +820,7 @@ function hseRecomputeAll(){
     if(s.offsite){var wk=weekKeyOf(s.date);(weeks[wk]=weeks[wk]||[]).push({s:s,pool:hseShiftPool(s)});}
   });
   for(var wk in weeks){
-    var es=weeks[wk],totH=0,totS=0,slips=hseSlips();
+    var es=weeks[wk],totH=0,totS=0;
     es.forEach(function(e){totH+=e.pool.H;totS+=e.pool.S;});
     var protT=Math.min(totH/2,HSE_OFFSITE.protectedCapH)*HSE_OFFSITE.protectedExtra;
     var sunT=Math.min(totS,HSE_OFFSITE.sundayCapH)*HSE_OFFSITE.sundayExtra;
@@ -826,10 +829,11 @@ function hseRecomputeAll(){
       var h=hseShiftHourly(e.s);
       var shareT=HSE_OFFSITE.base*e.pool.H+(totH>0?protT*(e.pool.H/totH):0)+(totS>0?sunT*(e.pool.S/totS):0);
       var amount=h*shareT;
-      e.s.split.push({id:'hse_oncall',name:'On call off-site',color:HSE_ROW_COLORS['On call off-site'],hours:e.pool.H,amount:amount,rate:amount/e.pool.H,slip:slips.offsite});
+      var eSlips=(e.s.hse&&e.s.hse.slips)||hseSlips();
+      e.s.split.push({id:'hse_oncall',name:'On call off-site',color:HSE_ROW_COLORS['On call off-site'],hours:e.pool.H,amount:amount,rate:amount/e.pool.H,slip:eSlips.offsite});
       if(e.s.dateSplit)for(var ds in e.pool.per){
         var share=amount*(e.pool.per[ds]/e.pool.H);
-        (e.s.dateSplit[ds]=e.s.dateSplit[ds]||[]).push({id:'hse_oncall',name:'On call off-site',color:HSE_ROW_COLORS['On call off-site'],hours:e.pool.per[ds],amount:share,rate:share/e.pool.per[ds],slip:slips.offsite});
+        (e.s.dateSplit[ds]=e.s.dateSplit[ds]||[]).push({id:'hse_oncall',name:'On call off-site',color:HSE_ROW_COLORS['On call off-site'],hours:e.pool.per[ds],amount:share,rate:share/e.pool.per[ds],slip:eSlips.offsite});
       }
     });
   }
@@ -880,7 +884,7 @@ function hseSetupHTML(){
     [['0','Same payslip'],['1','Next payslip'],['2','2 payslips later']].forEach(function(o){html+='<option value="'+o[0]+'"'+(String(sl[rowc[0]])===o[0]?' selected':'')+'>'+o[1]+'</option>';});
     html+='</select></div>';
   });
-  html+='<div class="tiny">Sites differ on what is paid in arrears. Match these to your payslip and each part will land on the right payslip.</div>';
+  html+='<div class="tiny">Sites differ on what is paid in arrears. Match these to your payslip. Shifts remember the setting they were logged under, so changing this only affects new shifts.</div>';
   html+='</div></div>';
   var rateBullet='Your hourly rate is your annual salary point divided by 52.18 weeks and then by 39 hours.';
   if(p.gradeCode&&hseGrade(p.gradeCode)){
@@ -913,7 +917,7 @@ function hseDraftFromLog(date,start,end,breakMin,breakStart){
   var p=hseProfile();
   var info=p&&p.gradeCode?hseHourly(p.gradeCode,p.point||1,date):null;
   var hourly=p&&p.hourlyOverride!=null?p.hourlyOverride:(info?info.hourly:0);
-  var d={id:-1,date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:logEndsNextDay,bh:false,bhDates:[],hse:{ed:!!(p&&p.ed),nightCore:!!(logNightCore&&!logOffsite),hourly:hourly,gradeCode:p?p.gradeCode:null,point:p?(p.point||1):null,annual:info?info.annual:null,scaleEdition:info?info.scaleEdition:null,hse_scale_edition:info?info.scaleEdition:null}};
+  var d={id:-1,date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:logEndsNextDay,bh:false,bhDates:[],hse:{ed:!!(p&&p.ed),nightCore:!!(logNightCore&&!logOffsite),slips:hseSlips(),hourly:hourly,gradeCode:p?p.gradeCode:null,point:p?(p.point||1):null,annual:info?info.annual:null,scaleEdition:info?info.scaleEdition:null,hse_scale_edition:info?info.scaleEdition:null}};
   if(logOffsite){
     var eff=logEffCallIns(start);
     if(eff.err)return{err:eff.err};
@@ -2771,6 +2775,12 @@ initSheetSwipe('edition-sheet',closeEditionSheet);
     var slipOT=(shifts[1].split.filter(function(r){return r.name==='Called in';})[0]||{}).slip;
     var slipOC=(shifts[1].split.filter(function(r){return r.id==='hse_oncall';})[0]||{}).slip;
     t('H14','Arrears settings route overtime and call to later payslips',{ot:1,offsite:2},{ot:slipOT,offsite:slipOC},slipOT===1&&slipOC===2);
+    shifts[1].hse.slips={core:0,ot:0,offsite:0};
+    settings.hse={gradeCode:'1012',point:1,ed:false,slips:{core:2,ot:2,offsite:2}};
+    hseRecomputeAll();
+    var snapOT=(shifts[1].split.filter(function(r){return r.name==='Called in';})[0]||{}).slip;
+    var snapOC=(shifts[1].split.filter(function(r){return r.id==='hse_oncall';})[0]||{}).slip;
+    t('H14b','A shift with snapshotted arrears ignores later setting changes',{ot:0,offsite:0},{ot:snapOT,offsite:snapOC},snapOT===0&&snapOC===0);
     settings.hse=prevHse;
     shifts=prevShifts;edition=prevEdition;
     return R;
