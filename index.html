@@ -317,6 +317,15 @@ details[open] summary .chev{transform:rotate(90deg)}
             <button class="btn-ghost" onclick="addCallIn()">+ Add call in</button>
           </div>
         </div>
+        <div class="card" id="l-unro-card" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Unrostered overtime</div><div class="tiny">Stayed past your rostered finish.</div></div>
+            <button class="toggle" id="l-unro-toggle" onclick="toggleUnrostered()"></button>
+          </div>
+          <div id="l-unro-row" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
+            <div class="field"><label class="lbl" style="font-size:9.5px">Rostered until</label><input type="text" id="l-ru" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()"></div>
+          </div>
+        </div>
         <div id="log-bk"></div>
         <button class="btn-primary" id="l-save-btn" onclick="addShift()" style="display:none">Save shift</button>
         <div style="height:6px"></div>
@@ -465,7 +474,7 @@ var onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null,bandEditSnapshot=null,pendingBackfill=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='',historyGroupMode='shifts';
 var logBH=false,logBHDay1=true,logBHDay2=false,logEndsNextDay=false,hasInitedPeriod=false,activeTplId=null;
-var logOffsite=false,logCallIns=[],logPreCall=false,logNightCore=false;
+var logOffsite=false,logCallIns=[],logPreCall=false,logNightCore=false,logUnrostered=false;
 // Editions: which product variant this device shows. A ?for= link (e.g.
 // ?for=locum) stamps the device once and is remembered, so the link is only
 // needed the first time. Editions gate UI visibility and default seeding,
@@ -720,7 +729,7 @@ function hseSlotClass(dow,slotDS,tod){
   if((dow<=3&&tod>=540&&tod<1020)||(dow===4&&tod>=540&&tod<960))return{label:'Basic',mult:1,std:true};
   return{label:'Overtime',mult:HSE_OT_MULT.weekday};
 }
-function hseSlips(){var p=hseProfile();var sl=(p&&p.slips)||{};return{core:sl.core||0,ot:sl.ot||0,offsite:sl.offsite||0};}
+function hseSlips(){var p=hseProfile();var sl=(p&&p.slips)||{};return{core:sl.core||0,ot:sl.ot||0,uot:sl.uot||0,offsite:sl.offsite||0};}
 // Contract s.11 night duty: the premium only applies when the duty is
 // rostered through the night, meaning at least 3 hours fall between 00:00
 // and 07:00. Premium window is 20:00-08:00, extended to 17:00-08:00 when the
@@ -756,10 +765,10 @@ function hseSlotWalk(s,cb){
     var d2=new Date(baseDate);d2.setDate(d2.getDate()+dayOffset);
     var inBreak=breakRanges.some(function(r){return abs>=r[0]&&abs<r[1];});
     var inCI=ranges.some(function(r){return abs>=r[0]&&abs<r[1];});
-    cb(dow,dateStr(d2),tod,inCI,inBreak);
+    cb(dow,dateStr(d2),tod,inCI,inBreak,abs);
   }
 }
-var HSE_ROW_COLORS={'Basic':'#2563eb','Sunday':'#dc2626','Public holiday':'#d97706','Overtime':'#b8632a','ED premium':'#7c3aed','Night premium':'#7c3aed','Sunday premium':'#dc2626','Public holiday premium':'#d97706','Called in':'#0891b2','On call off-site':'#0d9488'};
+var HSE_ROW_COLORS={'Basic':'#2563eb','Sunday':'#dc2626','Public holiday':'#d97706','Overtime':'#b8632a','Unrostered overtime':'#f59e0b','ED premium':'#7c3aed','Night premium':'#7c3aed','Sunday premium':'#dc2626','Public holiday premium':'#d97706','Called in':'#0891b2','Called in (unrostered)':'#0891b2','On call off-site':'#0d9488'};
 // Rows a shift can price on its own (everything except the pooled off-site
 // figure, which hseRecomputeAll attaches per week). byDate=true buckets rows
 // per calendar date so overnight shifts split pay across the days they cover.
@@ -778,13 +787,33 @@ function hseRowsWalk(s,byDate){
     var sM=parseTime(s.start),eM=parseTime(s.end);
     if(sM!==null&&eM!==null)night=hseNightInfo(sM,(eM-sM)+((s.endsNextDay||eM<=sM)?1440:0));
   }
-  hseSlotWalk(s,function(dow,slotDS,tod,inCI,inBreak){
+  // Rostered-until boundary: everything after the time the shift was rostered
+  // to finish is unrostered overtime, whatever the clock says, and routes to
+  // its own arrears bucket. Boundary equal to the start marks the whole shift
+  // unrostered.
+  var ruAbs=null;
+  if(s.hse&&s.hse.rosteredUntil){
+    var ruT=parseTime(s.hse.rosteredUntil),sM3=parseTime(s.start);
+    if(ruT!==null&&sM3!==null)ruAbs=ruT<sM3?ruT+1440:ruT;
+  }
+  hseSlotWalk(s,function(dow,slotDS,tod,inCI,inBreak,abs){
     if(inBreak)return;
     var c=hseSlotClass(dow,slotDS,tod);
+    var unro=ruAbs!==null&&abs>=ruAbs;
     if(s.offsite){
       // Called-in time pays the s.12 overtime rate instead of the off-site
-      // rate; a call-in inside the standard window still prices as overtime.
-      if(inCI)add(slotDS,'Called in',h*(c.std?HSE_OT_MULT.weekday:c.mult),slips.ot,15);
+      // rate; the portion of a call-in after the rostered end follows the
+      // unrostered overtime payslip.
+      if(inCI){
+        var ciMult=c.std?HSE_OT_MULT.weekday:c.mult;
+        if(unro)add(slotDS,'Called in (unrostered)',h*ciMult,slips.uot,15);
+        else add(slotDS,'Called in',h*ciMult,slips.ot,15);
+      }
+      return;
+    }
+    if(unro){
+      var uMult=(c.label==='Sunday'||c.label==='Public holiday')?HSE_OT_MULT.sunday:HSE_OT_MULT.weekday;
+      add(slotDS,'Unrostered overtime',h*uMult,slips.uot,15);
       return;
     }
     if(nightCore){
@@ -867,6 +896,7 @@ function setHseOverride(v){if(!settings.hse)return;var f=parseFloat(v);var auto=
   settings.hse.hourlyOverride=(isNaN(f)||f<=0||f===auto)?null:f;persist();renderBands();refreshLog();}
 function setHseSlip(k,v){settings.hse=settings.hse||{};settings.hse.slips=settings.hse.slips||{};settings.hse.slips[k]=parseInt(v)||0;if(HSE_SCALES)hseRecomputeAll();persist();}
 function toggleNightCore(){logNightCore=!logNightCore;var b=document.getElementById('l-nightcore-toggle');if(b)b.className='toggle'+(logNightCore?' on':'');refreshLog();}
+function toggleUnrostered(){logUnrostered=!logUnrostered;var b=document.getElementById('l-unro-toggle');if(b)b.className='toggle'+(logUnrostered?' on':'');var r=document.getElementById('l-unro-row');if(r)r.style.display=logUnrostered?'block':'none';if(!logUnrostered){var ru=document.getElementById('l-ru');if(ru)ru.value='';}refreshLog();}
 function hseEditionLabel(d){if(!d)return'';var p=d.split('-');return new Date(+p[0],+p[1]-1,+p[2],12).toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'});}
 function hseDisclaimerShort(ed){return'Estimate: HSE scale '+hseEditionLabel(ed||'2026-06-01')+', NCHD Contract 2010 (July 2020). Check against your payslip.';}
 function hseSetupHTML(){
@@ -890,7 +920,7 @@ function hseSetupHTML(){
   html+='<div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;margin:20px 0 8px">Paid on payslip</div>';
   html+='<div class="band-card"><div style="padding:13px 16px">';
   var sl=hseSlips();
-  [['core','Basic pay'],['ot','Overtime and premiums'],['offsite','Off-site call']].forEach(function(rowc){
+  [['core','Basic pay'],['ot','Rostered overtime and premiums'],['uot','Unrostered overtime'],['offsite','Off-site call']].forEach(function(rowc){
     html+='<div class="field" style="margin-bottom:10px"><label class="lbl">'+rowc[1]+'</label><select onchange="setHseSlip(\''+rowc[0]+'\',this.value)">';
     [['0','Same payslip'],['1','Next payslip'],['2','2 payslips later']].forEach(function(o){html+='<option value="'+o[0]+'"'+(String(sl[rowc[0]])===o[0]?' selected':'')+'>'+o[1]+'</option>';});
     html+='</select></div>';
@@ -915,6 +945,7 @@ function hseExplainerHTML(){
     'During a call-in, off-site call pay is replaced by the overtime rate for those hours, not paid on top.',
     'The contract measures overtime as hours over 39 a week averaged across a 4-week roster; the app prices what you log and does not model that averaging.',
     'Public holidays for 2026 and 2027 are built in and applied automatically, midnight to midnight. There is no extra public holiday uplift on off-site call hours.',
+    'Unrostered overtime: turn it on and enter when the shift was rostered to finish. Everything after that time pays the overtime rate and can land on its own payslip, including any call-in time after that point. Setting it to the shift start marks the whole shift unrostered.',
     'Overnight shifts split their pay across the days they cover.'
   ];
   var html='<div class="band-card" style="margin-bottom:8px"><details>';
@@ -931,7 +962,7 @@ function hseDraftFromLog(date,start,end,breakMin,breakStart){
   var p=hseProfile();
   var info=p&&p.gradeCode?hseHourly(p.gradeCode,p.point||1,date):null;
   var hourly=p&&p.hourlyOverride!=null?p.hourlyOverride:(info?info.hourly:0);
-  var d={id:-1,date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:logEndsNextDay,bh:false,bhDates:[],hse:{ed:!!(p&&p.ed),nightCore:!!(logNightCore&&!logOffsite),slips:hseSlips(),hourly:hourly,gradeCode:p?p.gradeCode:null,point:p?(p.point||1):null,annual:info?info.annual:null,scaleEdition:info?info.scaleEdition:null,hse_scale_edition:info?info.scaleEdition:null}};
+  var d={id:-1,date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:logEndsNextDay,bh:false,bhDates:[],hse:{ed:!!(p&&p.ed),nightCore:!!(logNightCore&&!logOffsite),slips:hseSlips(),rosteredUntil:(function(){if(!logUnrostered)return undefined;var ruEl=document.getElementById('l-ru');var v=ruEl?ruEl.value:'';return validTime(v)?v:undefined;})(),hourly:hourly,gradeCode:p?p.gradeCode:null,point:p?(p.point||1):null,annual:info?info.annual:null,scaleEdition:info?info.scaleEdition:null,hse_scale_edition:info?info.scaleEdition:null}};
   if(logOffsite){
     var eff=logEffCallIns(start);
     if(eff.err)return{err:eff.err};
@@ -997,6 +1028,7 @@ function addShiftHSE(date,start,end,breakMin,breakStart){
   logBH=false;logBHDay1=true;logBHDay2=false;logEndsNextDay=false;
   logCallIns=[];setLogOffsite(false);
   logNightCore=false;var ncBt=document.getElementById('l-nightcore-toggle');if(ncBt)ncBt.className='toggle';
+  logUnrostered=false;var uoBt=document.getElementById('l-unro-toggle');if(uoBt)uoBt.className='toggle';var uoRow=document.getElementById('l-unro-row');if(uoRow)uoRow.style.display='none';var ruEl2=document.getElementById('l-ru');if(ruEl2)ruEl2.value='';
   var bt3=document.getElementById('l-ends-next-toggle');if(bt3)bt3.className='toggle';
   document.getElementById('log-bk').innerHTML='';document.getElementById('l-save-btn').style.display='none';
   activeTplId=null;renderTplChips();
@@ -1752,7 +1784,9 @@ function buildEditFormHTML(s){
   html+='<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-bh-'+s.id+'" '+(bhInit?'checked':'')+' onchange="onEditBHToggle('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Bank Holiday</span></label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-end1-'+s.id+'" '+(s.endsNextDay?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Ends next day</span></label>';
   if(edCall()||edHSE()||s.offsite)html+='<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-off-'+s.id+'" '+(s._editOffsite?'checked':'')+' onchange="onEditOffsiteToggle('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Off-site call</span></label>';
   if(s.hse)html+='<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-nc-'+s.id+'" '+((s.hse&&s.hse.nightCore)?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Rostered night shift</span></label>';
+  if(s.hse)html+='<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-uo-'+s.id+'" '+(s.hse.rosteredUntil?'checked':'')+' onchange="var r=document.getElementById(\'ed-uo-row-'+s.id+'\');if(r)r.style.display=this.checked?\'block\':\'none\';refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Unrostered overtime</span></label>';
   html+='</div>';
+  if(s.hse)html+='<div id="ed-uo-row-'+s.id+'" style="margin:-2px 0 10px;'+(s.hse.rosteredUntil?'':'display:none')+'"><div class="field"><label class="lbl" style="font-size:9.5px">Rostered until</label><input type="time" id="ed-ru-'+s.id+'" value="'+(s.hse.rosteredUntil||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
   html+='<div id="ed-bh-days-'+s.id+'" style="display:none;margin:-2px 0 10px"><div class="lbl" style="margin-bottom:6px">Which day is BH?</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="day-pill" id="ed-bh-d1-'+s.id+'" onclick="onEditBHDay('+s.id+',1)"></button><button class="day-pill" id="ed-bh-d2-'+s.id+'" onclick="onEditBHDay('+s.id+',2)"></button></div></div>';
   html+='<div id="ed-ci-'+s.id+'"></div>';
   html+='<div id="ed-bk-'+s.id+'"></div>';
@@ -1882,7 +1916,9 @@ function refreshEditBK(id){
   }
   if(s&&s.hse){
     var ncEl=document.getElementById('ed-nc-'+id);
-    var hDraft={date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:ende,hse:Object.assign({},s.hse,{nightCore:ncEl?ncEl.checked:!!(s.hse&&s.hse.nightCore)})};
+    var uoEl=document.getElementById('ed-uo-'+id),ruEl3=document.getElementById('ed-ru-'+id);
+    var ruVal=(uoEl&&uoEl.checked&&ruEl3&&validTime(ruEl3.value))?ruEl3.value:undefined;
+    var hDraft={date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:ende,hse:Object.assign({},s.hse,{nightCore:ncEl?ncEl.checked:!!(s.hse&&s.hse.nightCore),rosteredUntil:ruVal})};
     if(s._editOffsite){hDraft.offsite=true;hDraft.callIns=(callOpts&&callOpts.callIns)||[];hDraft.breakMin=0;hDraft.breakStart='';}
     var hRows=hsePriceShift(hDraft),hTot=hRows.reduce(function(t,b){return t+b.amount;},0);
     var hHtml='<div style="padding:8px 0;border-top:1px solid var(--line-soft)">';
@@ -1929,6 +1965,8 @@ function saveEdit(id){
     Object.assign(s,{date:date,start:start,end:end,bh:false,bhDates:[],endsNextDay:ende,breakMin:0,breakStart:''});
     var ncSave=document.getElementById('ed-nc-'+id);
     s.hse.nightCore=ncSave?ncSave.checked&&!offsite:!!s.hse.nightCore;
+    var uoSave=document.getElementById('ed-uo-'+id),ruSave=document.getElementById('ed-ru-'+id);
+    if(uoSave&&uoSave.checked&&ruSave&&validTime(ruSave.value))s.hse.rosteredUntil=ruSave.value;else delete s.hse.rosteredUntil;
     if(offsite){s.offsite=true;s.callIns=cleanCIs;}else{delete s.offsite;delete s.callIns;}
     // Date may have moved across a scale boundary: refresh the stored rate
     // unless the profile has a manual override.
@@ -2506,6 +2544,7 @@ if(edHSE()){
   var brkCardH=document.getElementById('l-break-card');if(brkCardH)brkCardH.style.display='none';
   var ncCardH=document.getElementById('l-nightcore-card');if(ncCardH)ncCardH.style.display='block';
   var ciLbl=document.getElementById('l-ci-lbl');if(ciLbl)ciLbl.style.display='none';
+  var uroCardH=document.getElementById('l-unro-card');if(uroCardH)uroCardH.style.display='block';
   var bandsHdrT=document.getElementById('bands-hdr-title');if(bandsHdrT)bandsHdrT.textContent='Your pay';
   var bandsHdrA=document.getElementById('bands-hdr-add');if(bandsHdrA)bandsHdrA.style.display='none';
 }
@@ -2762,6 +2801,27 @@ initSheetSwipe('edition-sheet',closeEditionSheet);
     t('HN4','Twilight 16:00-00:00 marked rostered night does not qualify: basic only',+(8*h).toFixed(2),+tot(n4).toFixed(2),approx(tot(n4),8*h,0.02));
     var n5=mk('2026-07-15','20:00','08:00');n5.hse.nightCore=true;n5.hse.ed=true;
     t('HN5','ED premium applies across a rostered night shift',+((15+12/6)*h).toFixed(2),+tot(n5).toFixed(2),approx(tot(n5),(15+2)*h,0.02));
+    var u1=mk('2026-07-15','09:00','21:00');u1.hse.rosteredUntil='19:00';
+    var u1r=hsePriceShift(u1);
+    var u1b=(u1r.filter(function(r){return r.name==='Basic';})[0]||{}).hours||0;
+    var u1o=(u1r.filter(function(r){return r.name==='Overtime';})[0]||{}).hours||0;
+    var u1u=(u1r.filter(function(r){return r.name==='Unrostered overtime';})[0]||{}).hours||0;
+    t('HU1','Rostered to 19:00, stayed to 21:00: overtime splits rostered vs unrostered',{basic:8,ot:2,unro:2,total:+(14*h).toFixed(2)},{basic:u1b,ot:u1o,unro:u1u,total:+tot(u1).toFixed(2)},u1b===8&&u1o===2&&u1u===2&&approx(tot(u1),14*h,0.02));
+    var u2=mk('2026-07-15','20:00','10:00');u2.hse.nightCore=true;u2.hse.rosteredUntil='08:00';
+    var u2r=hsePriceShift(u2);
+    var u2b=(u2r.filter(function(r){return r.name==='Basic';})[0]||{}).hours||0;
+    var u2u=(u2r.filter(function(r){return r.name==='Unrostered overtime';})[0]||{}).hours||0;
+    t('HU2','Morning after nights: hours past the rostered end are unrostered OT even inside standard hours',{basic:12,unro:2,total:+((12+3+3)*h).toFixed(2)},{basic:u2b,unro:u2u,total:+tot(u2).toFixed(2)},u2b===12&&u2u===2&&approx(tot(u2),(12+3+3)*h,0.02));
+    var u3=mk('2026-07-18','20:00','10:00');u3.hse.rosteredUntil='08:00';
+    var u3u=hsePriceShift(u3).filter(function(r){return r.name==='Unrostered overtime';})[0];
+    t('HU3','Unrostered hours falling on a Sunday pay double time',+(4*h).toFixed(2),u3u?+u3u.amount.toFixed(2):0,!!u3u&&approx(u3u.amount,4*h,0.02));
+    var u4=mk('2026-07-15','17:00','09:00');u4.offsite=true;u4.callIns=[{start:'07:00',end:'09:00'}];u4.hse.rosteredUntil='08:00';
+    var u4r=hsePriceShift(u4);
+    var u4ros=(u4r.filter(function(r){return r.name==='Called in';})[0]||{}).hours||0;
+    var u4un=(u4r.filter(function(r){return r.name==='Called in (unrostered)';})[0]||{}).hours||0;
+    t('HU4','Call-in split at the rostered end: only the after portion is unrostered',{ros:1,unro:1},{ros:u4ros,unro:u4un},u4ros===1&&u4un===1);
+    var u5=mk('2026-07-15','10:00','12:00');u5.hse.rosteredUntil='10:00';
+    t('HU5','Boundary at the shift start marks the whole shift unrostered',+(3*h).toFixed(2),+tot(u5).toFixed(2),approx(tot(u5),3*h,0.02));
     // Full pipeline: the worked example logged as real shifts, pooled weekly.
     var prevShifts=shifts,prevEdition=edition;
     edition='hse';
