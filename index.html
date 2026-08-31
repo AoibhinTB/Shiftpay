@@ -323,7 +323,7 @@ details[open] summary .chev{transform:rotate(90deg)}
             <button class="toggle" id="l-unro-toggle" onclick="toggleUnrostered()"></button>
           </div>
           <div id="l-unro-row" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
-            <div class="field"><label class="lbl" style="font-size:9.5px">Rostered until</label><input type="text" id="l-ru" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()"></div>
+            <div class="field"><label class="lbl" style="font-size:9.5px">Unrostered overtime commenced at:</label><input type="text" id="l-ru" placeholder="--:--" inputmode="numeric" maxlength="5" oninput="fmtTimeInput(this);refreshLog()" onchange="refreshLog()"></div>
           </div>
         </div>
         <div id="log-bk"></div>
@@ -1786,7 +1786,7 @@ function buildEditFormHTML(s){
   if(s.hse)html+='<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-nc-'+s.id+'" '+((s.hse&&s.hse.nightCore)?'checked':'')+' onchange="refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Rostered night shift</span></label>';
   if(s.hse)html+='<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ed-uo-'+s.id+'" '+(s.hse.rosteredUntil?'checked':'')+' onchange="var r=document.getElementById(\'ed-uo-row-'+s.id+'\');if(r)r.style.display=this.checked?\'block\':\'none\';refreshEditBK('+s.id+')" style="accent-color:var(--blue)"><span style="font-size:13px">Unrostered overtime</span></label>';
   html+='</div>';
-  if(s.hse)html+='<div id="ed-uo-row-'+s.id+'" style="margin:-2px 0 10px;'+(s.hse.rosteredUntil?'':'display:none')+'"><div class="field"><label class="lbl" style="font-size:9.5px">Rostered until</label><input type="time" id="ed-ru-'+s.id+'" value="'+(s.hse.rosteredUntil||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
+  if(s.hse)html+='<div id="ed-uo-row-'+s.id+'" style="margin:-2px 0 10px;'+(s.hse.rosteredUntil?'':'display:none')+'"><div class="field"><label class="lbl" style="font-size:9.5px">Unrostered overtime commenced at:</label><input type="time" id="ed-ru-'+s.id+'" value="'+(s.hse.rosteredUntil||'')+'" onchange="refreshEditBK('+s.id+')" oninput="refreshEditBK('+s.id+')"></div></div>';
   html+='<div id="ed-bh-days-'+s.id+'" style="display:none;margin:-2px 0 10px"><div class="lbl" style="margin-bottom:6px">Which day is BH?</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="day-pill" id="ed-bh-d1-'+s.id+'" onclick="onEditBHDay('+s.id+',1)"></button><button class="day-pill" id="ed-bh-d2-'+s.id+'" onclick="onEditBHDay('+s.id+',2)"></button></div></div>';
   html+='<div id="ed-ci-'+s.id+'"></div>';
   html+='<div id="ed-bk-'+s.id+'"></div>';
