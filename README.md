@@ -16,15 +16,19 @@ Open the link, go to Setup and enter your hourly rates, then use Log Shift to re
 
 ShiftPay is one app that can present itself as different editions. The edition is chosen by the link a person first opens; the device remembers it after that, so the link is only needed once.
 
+There are two, split on which payroll a person is on, because that is what decides how their deductions work.
+
 | Audience | Link |
 |---|---|
-| HSE staff (includes off-site call) | https://aoibhintb.github.io/Shiftpay/?for=hse |
-| Locum staff | https://aoibhintb.github.io/Shiftpay/?for=locum |
-| Plain link (no edition) | https://aoibhintb.github.io/Shiftpay/ |
+| HSE payroll | https://aoibhintb.github.io/Shiftpay/?for=hse |
+| Agency, locum or anyone else (the default) | https://aoibhintb.github.io/Shiftpay/?for=locum |
+| Plain link, same as locum | https://aoibhintb.github.io/Shiftpay/ |
+
+`base` is kept internally as an alias of `locum` so that devices which stored it before the two were merged keep working untouched.
 
 The part after the `?` is read by the app itself in the browser, not by the server, so every link serves the same page. GitHub Pages has no list of these links; this table is the record of them.
 
-Editions only change what is visible and which defaults are set up. Pay calculation is identical in all editions, so shifts already logged keep their totals if a device ever changes edition.
+Editions change what is visible, which defaults are set up, and which deduction model the net pay estimate uses: the locum edition assumes agency PAYE, the HSE edition assumes HSE payroll. Gross pay calculation is identical in both, so shifts already logged keep their totals if a device ever changes edition.
 
 ## Developing
 

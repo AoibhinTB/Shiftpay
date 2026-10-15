@@ -59,6 +59,8 @@ input[type=time],input[type=date]{font-size:16px;-webkit-appearance:none;appeara
 .field input:focus,.field select:focus{outline:none;border-color:var(--blue)}
 .row-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.info-dot{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:5px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--muted);font-size:10px;font-weight:700;line-height:1;cursor:pointer;vertical-align:middle;padding:0}
+.info-tip{position:fixed;z-index:300;display:none;background:var(--ink);color:var(--cream);font-size:12.5px;line-height:1.5;padding:9px 11px;border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 .toggle{width:44px;height:26px;border-radius:999px;background:var(--cream-deep);border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
 .toggle::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .toggle.on{background:var(--blue)}
@@ -357,13 +359,15 @@ details[open] summary .chev{transform:rotate(90deg)}
         </div>
         <div class="save-ok" id="save-ok">Saved</div>
       </div>
+      <div class="sect-hdr" id="tax-hdr" style="display:none"><h2>Net pay estimate</h2></div>
+      <div class="pad-x" id="tax-container" style="display:none"></div>
       <div class="sect-hdr"><h2>Privacy</h2></div>
       <div class="pad-x">
         <div class="card"><div class="tiny" style="line-height:1.6">Everything you enter stays on your device. There are no accounts, no external database, and nothing is sent anywhere or shared with anyone. No tracking.</div></div>
       </div>
       <div class="sect-hdr" id="hpc-hdr"><h2>How pay is calculated</h2></div>
       <div class="pad-x" id="hpc-container">
-        <div class="card"><div class="tiny" style="line-height:1.6">Bands with a higher rate take priority where they overlap. <span id="hpc-call">Off-site call shifts pay your call rates, and time worked on site pays whichever pay band covers that time. Breaks do not apply to call shifts. </span>Shows gross pay only. Tax, USC, PRSI and pension are not deducted.</div></div>
+        <div class="card"><div class="tiny" style="line-height:1.6">Bands with a higher rate take priority where they overlap. <span id="hpc-call">Off-site call shifts pay your call rates, and time worked on site pays whichever pay band covers that time. Breaks do not apply to call shifts. </span><span id="hpc-gross">Shows gross pay only. Tax, USC, PRSI and pension are not deducted.</span></div></div>
       </div>
       <div style="height:20px"></div>
     </div>
@@ -443,6 +447,14 @@ details[open] summary .chev{transform:rotate(90deg)}
 <div class="sheet" id="edit-sheet">
   <div id="edit-sheet-body" style="padding:0 0 16px;max-height:80vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
 </div>
+<div class="scrim" id="pay-scrim" onclick="closePaySheet()"></div>
+<div class="sheet" id="pay-sheet">
+  <div style="padding:20px 24px 28px;max-height:78vh;overflow-y:auto">
+    <div style="width:36px;height:4px;border-radius:999px;background:var(--cream-deep);margin:0 auto 14px"></div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:12px">How your pay is worked out</div>
+    <div id="pay-sheet-body"></div>
+  </div>
+</div>
 <div class="scrim" id="edition-scrim" onclick="closeEditionSheet()"></div>
 <div class="sheet" id="edition-sheet">
   <div style="padding:20px 24px 28px">
@@ -469,7 +481,7 @@ details[open] summary .chev{transform:rotate(90deg)}
 var DOW_IE=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 var PALETTE=['#2563eb','#7c3aed','#0d9488','#dc2626','#d97706','#0891b2','#059669','#f59e0b'];
 var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
-var settings={periodType:'weekly',nextPayslipDate:'',periodDefers:{},callTiers:null};
+var settings={periodType:'weekly',nextPayslipDate:'',periodDefers:{},callTiers:null,tax:null};
 var onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null,bandEditSnapshot=null,pendingBackfill=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='',historyGroupMode='shifts';
@@ -483,7 +495,7 @@ var logOffsite=false,logCallIns=[],logPreCall=false,logNightCore=false,logUnrost
 // hse: NCHD flow — scale-driven basic hourly, contract premiums, weekly
 //      pooled off-site call. Reuses the off-site entry UI, prices differently.
 // locum: bands only, no call features.
-var EDITIONS={base:{call:true},hse:{hse:true},locum:{}};
+var EDITIONS={base:{call:true,tax:true},hse:{hse:true,tax:true},locum:{call:true,tax:true}};
 var edition='base';
 (function(){
   try{
@@ -495,6 +507,7 @@ var edition='base';
 })();
 function edCall(){return!!EDITIONS[edition].call;}
 function edHSE(){return!!EDITIONS[edition].hse;}
+function edTax(){return!!EDITIONS[edition].tax;}
 
 function persist(){try{localStorage.setItem('shiftpay.bands',JSON.stringify(bands));localStorage.setItem('shiftpay.shifts',JSON.stringify(shifts));localStorage.setItem('shiftpay.templates',JSON.stringify(shiftTemplates));localStorage.setItem('shiftpay.manuals',JSON.stringify(manualEntries));localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}catch(e){}}
 function loadData(){
@@ -533,13 +546,7 @@ function defaultOffsiteBands(){
   ];
 }
 function loadDefaultTemplates(){
-  shiftTemplates=[
-    {id:'t1',name:'Day on call',start:'08:00',end:'20:00',breakMin:30,breakStart:'13:00'},
-    {id:'t2',name:'Night',start:'20:00',end:'09:00',breakMin:30,breakStart:'02:00'},
-    {id:'t3',name:'Twilight',start:'16:00',end:'00:00',breakMin:0,breakStart:''},
-    {id:'t4',name:'Weekend long',start:'08:00',end:'20:00',breakMin:60,breakStart:'13:30'}
-  ];
-  if(edCall()||edHSE())shiftTemplates.push({id:'t5',name:'Night call from home',start:'18:00',end:'08:00',breakMin:0,breakStart:'',offsite:true});
+  shiftTemplates=[{id:'t1',name:'Day shift',start:'09:00',end:'17:00',breakMin:0,breakStart:''}];
 }
 function ensureDefaultBands(){
   // Migrate old-format bands: convert JS day convention (0=Sun) to Irish (0=Mon)
@@ -696,7 +703,7 @@ function recomputeAllShifts(){
 // overtime multipliers restored to pre-HRA levels from 1 July 2021 by HSE HR
 // Circular 031/2021 (Appendix A reissued in HR Circular 016/2023).
 // Basic hourly = annual salary point / 52.18 / 39 (39-hour contracted week).
-var HSE_WEEK_DIVISOR=52.18,HSE_WEEK_HOURS=39;
+var HSE_WEEK_DIVISOR=365.25/7,HSE_WEEK_HOURS=39; // 52.178571; matches payroll exactly
 var HSE_OT_MULT={weekday:1.5,sunday:2,ph:2}; // HR Circular 031/2021: 1.5 Mon-Sat, 2.0 Sun/PH
 var HSE_ED_PREMIUM=1/6; // Contract s.10b ED rotating shift premium, core hours only
 var HSE_OFFSITE={base:0.5,protectedExtra:0.75,protectedCapH:10,sundayExtra:0.75,sundayCapH:8}; // s.13 + Appendix I
@@ -929,13 +936,7 @@ function hseSetupHTML(){
   html+='</div></div>';
   return html;
 }
-function hseExplainerHTML(){
-  var p=hseProfile()||{};
-  var rateBullet='Your hourly rate is your annual salary point divided by 52.18 weeks and then by 39 hours.';
-  if(HSE_SCALES&&p.gradeCode&&hseGrade(p.gradeCode)){
-    var i2=hseHourly(p.gradeCode,p.point||1,dateStr(new Date()));
-    rateBullet+=' For you: €'+i2.annual.toLocaleString('en-IE')+' ÷ 52.18 ÷ 39 = €'+i2.hourly.toFixed(2)+'/hr, HSE scale '+hseEditionLabel(i2.scaleEdition)+'.';
-  }
+function hsePayBullets(rateBullet){
   var bullets=[
     rateBullet,
     'Standard hours are Monday to Thursday 09:00 to 17:00 and Friday 09:00 to 16:00. Hours outside them price as overtime, 1.5 times basic Monday to Saturday. Sundays and public holidays pay double time.',
@@ -948,15 +949,37 @@ function hseExplainerHTML(){
     'Unrostered overtime: turn it on and enter when the shift was rostered to finish. Everything after that time pays the overtime rate and can land on its own payslip, including any call-in time after that point. Setting it to the shift start marks the whole shift unrostered.',
     'Overnight shifts split their pay across the days they cover.'
   ];
-  var html='<div class="band-card" style="margin-bottom:8px"><details>';
-  html+='<summary style="padding:13px 16px;font-size:14.5px;font-weight:700;display:flex;justify-content:space-between;align-items:center">How your pay is worked out<div class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div></summary>';
-  html+='<div class="tiny" style="padding:0 16px 13px;line-height:1.6;border-top:1px solid var(--line-soft)">';
-  html+='<div style="margin-top:10px">'+hseDisclaimerShort()+'</div>';
+  return bullets;
+}
+function hseExplainerHTML(){
+  return '<div class="band-card" style="margin-bottom:8px"><button type="button" onclick="openPaySheet()" style="width:100%;background:none;border:none;padding:13px 16px;font-family:Geist,sans-serif;font-size:14.5px;font-weight:700;color:var(--ink);display:flex;justify-content:space-between;align-items:center;cursor:pointer;text-align:left">How your pay is worked out<span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></span></button></div>';
+}
+function hsePayDetailHTML(){
+  var p=hseProfile()||{};
+  var rateBullet='Your hourly rate is your annual salary point divided by 52.18 weeks and then by 39 hours.';
+  if(HSE_SCALES&&p.gradeCode&&hseGrade(p.gradeCode)){
+    var i3=hseHourly(p.gradeCode,p.point||1,dateStr(new Date()));
+    rateBullet+=' For you: \u20ac'+i3.annual.toLocaleString('en-IE')+' is \u20ac'+i3.hourly.toFixed(2)+'/hr, HSE scale '+hseEditionLabel(i3.scaleEdition)+'.';
+  }
+  var bullets=hsePayBullets(rateBullet);
+  var html='<div class="tiny" style="line-height:1.6">';
+  html+='<div>'+hseDisclaimerShort()+'</div>';
   html+='<ul style="margin:10px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:8px">';
   bullets.forEach(function(b){html+='<li>'+b+'</li>';});
   html+='</ul>';
-  html+='</div></details></div>';
+  html+='</div>';
   return html;
+}
+function openPaySheet(){
+  var b=document.getElementById('pay-sheet-body');if(b)b.innerHTML=hsePayDetailHTML();
+  document.getElementById('pay-scrim').className='scrim open';
+  document.getElementById('pay-sheet').className='sheet open';
+  document.getElementById('content').style.overflow='hidden';
+}
+function closePaySheet(){
+  document.getElementById('pay-scrim').className='scrim';
+  document.getElementById('pay-sheet').className='sheet';
+  document.getElementById('content').style.overflow='';
 }
 function hseDraftFromLog(date,start,end,breakMin,breakStart){
   var p=hseProfile();
@@ -999,6 +1022,10 @@ function refreshLogHSE(date,start,end,breakMin,breakStart,bkEl,saveBtn){
     html+='<div class="lbl" style="margin-bottom:6px">This shift pays</div>';
     html+='<div class="bk-amt">€'+fmted+'<span style="font-size:.55em;opacity:.7">.'+(parts[1]||'00')+'</span></div>';
     html+='<div class="tiny" style="margin-bottom:2px">'+shiftTotalHours(date,start,end,d.breakMin,logEndsNextDay).toFixed(1)+'h gross · €'+d.hse.hourly.toFixed(2)+'/hr basic</div>';
+    if(taxOn()&&total>0){
+      var mgH=ieMarginal(total,date);
+      html+='<div class="tiny" style="margin-bottom:2px;color:var(--blue);font-weight:600">You keep about '+fmtEUR(mgH.keep)+' · '+Math.round(mgH.rate*100)+'% in deductions</div>';
+    }
     if(rows.length){
       html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:8px">';
       rows.forEach(function(b){html+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span style="color:var(--muted);font-size:12px">'+b.hours.toFixed(1)+'h · '+fmtEUR(b.rate)+'/h</span></span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';});
@@ -1179,6 +1206,473 @@ function buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,theme,endsNe
   return html;
 }
 
+// === Irish PAYE net pay estimate (locum edition, agency PAYE) ===
+// Rate sets are keyed by effective-from date rather than tax year: employee PRSI
+// steps up on 1 October each year to 2028, so a year-keyed table would be wrong
+// for a quarter of every year. A date before the first entry clamps to it.
+var IE_RATES=[
+  {from:'2026-01-01',label:'2026 rates',
+   srcop:44000,credits:4000,
+   usc:[[12012,0.005],[28700,0.02],[70044,0.03],[null,0.08]],uscExempt:13000,
+   prsi:0.042,prsiThrWk:352,prsiCredMax:12,prsiCredEndWk:424,
+   ae:{rate:0.015,minAnnual:20000,capAnnual:80000}},
+  {from:'2026-10-01',label:'2026 rates, PRSI from 1 October',
+   srcop:44000,credits:4000,
+   usc:[[12012,0.005],[28700,0.02],[70044,0.03],[null,0.08]],uscExempt:13000,
+   prsi:0.0435,prsiThrWk:352,prsiCredMax:12,prsiCredEndWk:424,
+   ae:{rate:0.015,minAnnual:20000,capAnnual:80000}}
+];
+function ieRates(ds){var c=IE_RATES[0];for(var i=0;i<IE_RATES.length;i++)if(IE_RATES[i].from<=ds)c=IE_RATES[i];return c;}
+function ensureTax(){
+  if(!settings.tax)settings.tax={on:false,srcop:'',credits:'',ae:true,other:'',ytd:null};
+  if(!settings.tax.ytd)settings.tax.ytd={date:'',gross:'',tax:'',usc:'',prsi:'',ae:'',cutoffTd:'',creditTd:'',taxableTd:'',prsiableTd:'',pensionTd:'',ascTd:''};
+  return settings.tax;
+}
+function taxOn(){return edTax()&&!!(settings.tax&&settings.tax.on);}
+function hseBasicForPeriod(ds,of){
+  var p=hseProfile();
+  if(!p||!p.gradeCode||!HSE_SCALES)return 0;
+  var inf=hseHourly(p.gradeCode,p.point||1,ds);
+  return inf?inf.annual/of:0;
+}
+function hseBasicDeductions(ds,of){
+  var basic=hseBasicForPeriod(ds,of);
+  return {basic:basic,pension:hsePension(basic,of,ds),asc:hseASC(basic,of,ds)};
+}
+function taxOther(){var v=parseFloat((settings.tax||{}).other);return(isNaN(v)||v<0)?0:v;}
+// A floating bubble anchored to the dot, so opening one never shifts the form
+// underneath the finger that is filling it in.
+function showInfo(ev,btn,k){
+  if(ev&&ev.stopPropagation)ev.stopPropagation();
+  var tip=document.getElementById('info-tip');
+  if(!tip){
+    tip=document.createElement('div');tip.id='info-tip';tip.className='info-tip';
+    document.body.appendChild(tip);
+    document.addEventListener('click',function(){tip.style.display='none';tip.setAttribute('data-k','');});
+  }
+  if(tip.getAttribute('data-k')===k&&tip.style.display==='block'){tip.style.display='none';tip.setAttribute('data-k','');return;}
+  tip.textContent=TAX_INFO[k]||'';
+  tip.setAttribute('data-k',k);
+  tip.style.display='block';
+  var r=btn.getBoundingClientRect(),vw=window.innerWidth,vh=window.innerHeight;
+  var w=Math.min(250,vw-24);
+  tip.style.width=w+'px';
+  tip.style.left=Math.round(Math.min(Math.max(10,r.left+r.width/2-w/2),vw-w-10))+'px';
+  var below=r.bottom+8;
+  tip.style.top=Math.round((below+tip.offsetHeight>vh-10)?Math.max(10,r.top-tip.offsetHeight-8):below)+'px';
+}
+// Short plain-English notes, shown behind a (?) rather than written into the form.
+var TAX_INFO={
+  gross:'Total pay before deductions.',
+  taxable:'Gross pay less pension and ASC.',
+  prsiable:'Pay your USC and PRSI are charged on.',
+  cutoffTd:'Pay you can earn at 20% before the 40% rate starts.',
+  creditTd:'Reduce total tax paid.',
+  pensionTd:'Your public service pension. Deducted before tax.',
+  ascTd:'A pension levy on your basic pay. Deducted before tax.',
+  tax:'Income tax paid so far this year.',
+  usc:'Universal Social Charge paid so far this year.',
+  prsi:'Employee PRSI contribution.',
+  ae:'Auto enrolment pension paid so far this year.',
+  other:'Extra deductions eg. car parking. Deducted post-tax.'
+};
+// Payslips print the cut off and credits accrued TO DATE, never the yearly
+// figure the calculation needs. The payslip date tells us which period it is,
+// so work the yearly figure back out rather than making the user do it.
+// Note this is the tax period, not TOTAL INS WK: a locum with gaps is far
+// further through the tax year than their count of paid weeks suggests.
+function annualFromToDate(toDate,anchorDate){
+  var v=parseFloat(toDate);
+  if(isNaN(v)||v<=0||!anchorDate)return null;
+  var p=taxPeriodNo(anchorDate);
+  if(!p.n)return null;
+  return Math.round(v/p.n*p.of);
+}
+function taxCfg(ds){
+  var t=settings.tax||{},r=ieRates(ds||dateStr(new Date()));
+  var y=(t.ytd&&t.ytd.date)?t.ytd:null;
+  var dCut=y?annualFromToDate(y.cutoffTd,y.date):null;
+  var dCred=y?annualFromToDate(y.creditTd,y.date):null;
+  var sr=parseFloat(t.srcop),cr=parseFloat(t.credits);
+  return {r:r,
+    srcop:!isNaN(sr)?sr:(dCut!=null?dCut:r.srcop),
+    credits:!isNaN(cr)?cr:(dCred!=null?dCred:r.credits),
+    derivedSrcop:dCut,derivedCredits:dCred,
+    ae:edHSE()?false:(t.ae!==false),ytd:y};
+}
+function ieIncomeTax(annual,srcop,credits){
+  if(annual<=0)return 0;
+  var g=Math.min(annual,srcop)*0.20+Math.max(0,annual-srcop)*0.40;
+  return Math.max(0,g-credits);
+}
+function ieUSC(annual,r){
+  if(annual<=r.uscExempt)return 0;
+  var t=0,prev=0;
+  for(var i=0;i<r.usc.length;i++){
+    var ceil=r.usc[i][0],top=(ceil===null)?annual:Math.min(annual,ceil);
+    if(top>prev)t+=(top-prev)*r.usc[i][1];
+    if(ceil===null||annual<=ceil)break;
+    prev=ceil;
+  }
+  return t;
+}
+// Employee PRSI is assessed on each pay period on its own and is never
+// reconciled at year end, unlike income tax and USC. A quiet week under the
+// threshold genuinely costs nothing, and that is not clawed back later.
+function iePeriodWeeks(){return settings.periodType==='weekly'?1:(settings.periodType==='biweekly'?2:52/12);}
+function iePRSI(periodGross,r){
+  var wks=iePeriodWeeks(),wk=periodGross/wks;
+  if(wk<=r.prsiThrWk)return 0;
+  var per=wk*r.prsi;
+  if(wk<r.prsiCredEndWk){var c=r.prsiCredMax-(wk-r.prsiThrWk)/6;if(c>0)per=Math.max(0,per-c);}
+  return per*wks;
+}
+function ieAE(annual,r,on){
+  if(!on||!r.ae||annual<=r.ae.minAnnual)return 0;
+  return Math.min(annual,r.ae.capAnnual)*r.ae.rate;
+}
+// Auto enrolment is taken as a flat percentage of each period's gross, with no
+// banding and no cumulative reconciliation. Confirmed against real payslips.
+function ieAEPeriod(amount,c){return c.ae?amount*c.r.ae.rate:0;}
+// Which tax period a date falls in. Revenue weekly periods run from 1 January,
+// so 9 October 2026 is week 41. Verified against four real payslips.
+function taxPeriodNo(ds){
+  var d=new Date(ds+'T12:00'),doy=Math.floor((d-new Date(d.getFullYear(),0,1))/86400000)+1;
+  if(settings.periodType==='monthly')return {n:d.getMonth()+1,of:12};
+  if(settings.periodType==='biweekly')return {n:Math.min(26,Math.ceil(doy/14)),of:26};
+  return {n:Math.min(52,Math.ceil(doy/7)),of:52};
+}
+// Cumulative PAYE prorates the cut off, the credits AND the USC band ceilings to
+// the pay period: at week 41 you get 41/52 of each. Applying the full annual
+// figures to a part-year gross understates the tax badly, by about 2,700 at
+// week 41 on a real payslip. This is the model that predicts your next payslip.
+// Revenue issues per-period credits and cut off rounded UP to the cent, and the
+// cumulative figure is that times the period number. 44000/52 rounds up to
+// 846.16, and 846.16 x 41 = 34692.56, which is what the payslip shows to the
+// cent. Prorating the annual figure directly is off by a few cent.
+function perPeriodUp(annual,of){return Math.ceil(annual/of*100)/100;}
+function cumPeriodN(ds,nOverride){
+  var p=taxPeriodNo(ds);
+  return {p:p,n:(nOverride===undefined||nOverride===null)?p.n:Math.max(0,nOverride),of:p.of};
+}
+function ieCumulativeTax(ytdTaxable,ds,nOverride){
+  var c=taxCfg(ds),k=cumPeriodN(ds,nOverride);
+  if(k.n<=0)return {tax:0,cutoff:0,credits:0,period:k.p,n:0};
+  var cutoff=perPeriodUp(c.srcop,k.of)*k.n,credits=perPeriodUp(c.credits,k.of)*k.n;
+  return {tax:Math.max(0,Math.min(ytdTaxable,cutoff)*0.20+Math.max(0,ytdTaxable-cutoff)*0.40-credits),
+    cutoff:cutoff,credits:credits,period:k.p,n:k.n};
+}
+function ieCumulativeUSC(ytdUscable,ds,nOverride){
+  var c=taxCfg(ds),r=c.r,k=cumPeriodN(ds,nOverride);
+  if(k.n<=0)return 0;
+  var f=k.n/k.of;
+  // The USC exemption is an annual test, so apply it to the annualised figure
+  // rather than prorating the threshold itself.
+  if(ytdUscable/f<=r.uscExempt)return 0;
+  var usc=0,prev=0;
+  for(var i=0;i<r.usc.length;i++){
+    var ceil=(r.usc[i][0]===null)?null:perPeriodUp(r.usc[i][0],k.of)*k.n;
+    var top=(ceil===null)?ytdUscable:Math.min(ytdUscable,ceil);
+    if(top>prev)usc+=(top-prev)*r.usc[i][1];
+    if(ceil===null||ytdUscable<=ceil)break;
+    prev=ceil;
+  }
+  return usc;
+}
+// Agency payroll: taxable, USCable and gross are all the same number.
+function ieCumulative(ytdGross,ds,nOverride){
+  var t=ieCumulativeTax(ytdGross,ds,nOverride);
+  return {tax:t.tax,usc:ieCumulativeUSC(ytdGross,ds,nOverride),period:t.period,n:t.n,cutoff:t.cutoff,credits:t.credits};
+}
+
+// === HSE payroll deductions (Single Scheme) ===
+// Validated to the cent against nine real NCHD payslips. Only basic pay is
+// pensionable, so overtime, call-out, on-call and holiday premiums carry no
+// pension or ASC. Both pension and ASC reduce taxable pay, unlike auto
+// enrolment, which does not.
+var HSE_DEDUCT=[
+  {from:'2026-01-01',
+   asc:[[34500,0],[60000,0.0333],[null,0.035]],
+   pension:{base:0.03,net:0.035,offsetAnnual:31072.08}},
+  {from:'2026-02-01',
+   asc:[[34500,0],[60000,0.0333],[null,0.035]],
+   // Twice the State Pension (Contributory). It stepped up from February 2026,
+   // which is the only thing that stopped the January payslip reconciling.
+   pension:{base:0.03,net:0.035,offsetAnnual:31104.00}}
+];
+function hseDeductRates(ds){var c=HSE_DEDUCT[0];for(var i=0;i<HSE_DEDUCT.length;i++)if(HSE_DEDUCT[i].from<=ds)c=HSE_DEDUCT[i];return c;}
+// Payroll truncates these to the cent rather than rounding.
+function truncCent(v){return Math.floor(v*100+1e-6)/100;}
+function hseASC(pensionablePeriod,of,ds){
+  var bands=hseDeductRates(ds).asc,t=0,prev=0;
+  for(var i=0;i<bands.length;i++){
+    var ceil=(bands[i][0]===null)?null:bands[i][0]/of;
+    var top=(ceil===null)?pensionablePeriod:Math.min(pensionablePeriod,ceil);
+    if(top>prev)t+=(top-prev)*bands[i][1];
+    if(ceil===null||pensionablePeriod<=ceil)break;
+    prev=ceil;
+  }
+  return truncCent(t);
+}
+function hsePension(pensionablePeriod,of,ds){
+  var pn=hseDeductRates(ds).pension,offset=pn.offsetAnnual/of;
+  return truncCent(pn.base*pensionablePeriod+pn.net*Math.max(0,pensionablePeriod-offset));
+}
+// PAYE runs on the date you are PAID, not the date you worked. Agencies commonly
+// pay a week in arrears, so a shift worked in one tax week is taxed in the next,
+// with an extra period of credits and cut off against it. Route everything to
+// the payslip it lands on, reusing the arrears model the rest of the app uses.
+// Weekly period keys are stored as the Monday, but Revenue weeks run from
+// 1 January, so the Monday and the Friday of a calendar week can sit in
+// different tax weeks. Use the real pay day when the user has given us one.
+function payDateOf(pk){
+  var start=periodKeyToDate(pk);
+  if(settings.periodType==='monthly'){
+    var last=new Date(start.getFullYear(),start.getMonth()+1,0);
+    var dom=settings.nextPayslipDate?parseInt(settings.nextPayslipDate.split('-')[2],10):last.getDate();
+    return dateStr(new Date(start.getFullYear(),start.getMonth(),Math.min(dom||last.getDate(),last.getDate())));
+  }
+  var span=(settings.periodType==='biweekly')?13:6,off=span;
+  if(settings.nextPayslipDate){
+    var pd=new Date(settings.nextPayslipDate+'T12:00'),mon=getMondayOfWeek(pd);
+    off=Math.min(span,Math.max(0,Math.round((pd-mon)/86400000)));
+  }
+  var d=new Date(start);d.setDate(d.getDate()+off);
+  return dateStr(d);
+}
+function grossByPeriod(fromDS,toDS){
+  var m={};
+  function add(ds,amt,slip){
+    var pk=advancePeriodKey(getPeriodKey(ds),slip||0),payDS=payDateOf(pk);
+    if((fromDS&&payDS<fromDS)||(toDS&&payDS>toDS))return;
+    if(!m[pk])m[pk]={gross:0,ds:payDS};
+    m[pk].gross+=amt||0;
+  }
+  shifts.forEach(function(s){
+    if(s.dateSplit&&Object.keys(s.dateSplit).length){
+      for(var ds in s.dateSplit)s.dateSplit[ds].forEach(function(b){add(ds,b.amount,effectiveSlip(b,getPeriodKey(ds)));});
+      return;
+    }
+    var split=s.split||[];
+    if(split.length)split.forEach(function(b){add(s.date,b.amount,effectiveSlip(b,getPeriodKey(s.date)));});
+    else add(s.date,s.tp||0,0);
+  });
+  manualEntries.forEach(function(e){add(e.date,e.amount||0,0);});
+  return m;
+}
+// Your cumulative position only moves when a payslip runs, so the period that
+// matters is the one your last payslip fell in, not today's.
+function latestPayDate(pos,ds){
+  var best=pos.anchored?pos.anchorDate:null;
+  for(var pk in pos.since){var d=pos.since[pk].ds;if(!best||d>best)best=d;}
+  return best||ds;
+}
+function sumPeriods(m){var t=0;for(var k in m)t+=m[k].gross;return t;}
+// A payslip anchor beats reconstructed history: its year to date figures already
+// contain the gaps, any Week 1 spell, emergency tax, and anything earned before
+// the app was installed. Without one, fall back to what has been logged.
+function taxPosition(ds){
+  var c=taxCfg(ds),yr=ds.slice(0,4),a=c.ytd;
+  if(a&&String(a.date).slice(0,4)===yr&&a.date<=ds){
+    var since=grossByPeriod(nextDayStr(a.date),yr+'-12-31'),add=sumPeriods(since);
+    var g=(parseFloat(a.gross)||0)+add;
+    // HSE payroll charges tax and USC on two different bases, both printed on
+    // the payslip. Agency payroll uses the same number for all three. Anything
+    // logged since the anchor is overtime, which is fully taxable and USCable.
+    var tx=g,us=g;
+    if(edHSE()){
+      // Basic salary accrues every period whether or not anything is logged.
+      var pp=taxPeriodNo(ds),nS=Math.max(0,pp.n-taxPeriodNo(a.date).n);
+      var bd=hseBasicDeductions(ds,pp.of);
+      g+=nS*bd.basic;
+      tx=(parseFloat(a.taxableTd)||0)+add+nS*(bd.basic-bd.pension-bd.asc);
+      us=(parseFloat(a.prsiableTd)||0)+add+nS*bd.basic;
+    }
+    return {gross:g,taxable:tx,uscable:us,since:since,anchored:true,anchorDate:a.date,
+      paid:{tax:parseFloat(a.tax)||0,usc:parseFloat(a.usc)||0,prsi:parseFloat(a.prsi)||0,ae:parseFloat(a.ae)||0,
+            pension:parseFloat(a.pensionTd)||0,asc:parseFloat(a.ascTd)||0}};
+  }
+  var all=grossByPeriod(yr+'-01-01',yr+'-12-31'),g2=sumPeriods(all);
+  return {gross:g2,taxable:g2,uscable:g2,since:all,anchored:false,anchorDate:null,paid:null};
+}
+// Year-end liability on everything earned so far. This is the robust figure: it
+// does not depend on in-year timing, tax basis, or how lumpy the work was.
+function ieEstimate(ds){
+  var c=taxCfg(ds),pos=taxPosition(ds),g=pos.gross;
+  // Two different questions. The cumulative figure is what payroll has actually
+  // taken by now. The stop-now figure is what the year would settle at if no
+  // more work came in, and the gap between them is the refund you would be due.
+  var asAt=latestPayDate(pos,ds);
+  var cum={tax:ieCumulativeTax(pos.taxable,asAt).tax,usc:ieCumulativeUSC(pos.uscable,asAt),
+           period:taxPeriodNo(asAt)};
+  var stopTax=ieIncomeTax(pos.taxable,c.srcop,c.credits),stopUsc=ieUSC(pos.uscable,c.r);
+  var prsi=pos.anchored?pos.paid.prsi:0,ae=pos.anchored?pos.paid.ae:0;
+  for(var pk in pos.since){
+    prsi+=iePRSI(pos.since[pk].gross,ieRates(pos.since[pk].ds));
+    ae+=ieAEPeriod(pos.since[pk].gross,c);
+  }
+  var pen=0,asc=0;
+  if(edHSE()){
+    pen=pos.anchored?pos.paid.pension:0;asc=pos.anchored?pos.paid.asc:0;
+    var pr=hseProfile(),inf=(pr&&pr.gradeCode&&HSE_SCALES)?hseHourly(pr.gradeCode,pr.point||1,asAt):null;
+    var nSince=cum.period.n-(pos.anchored?taxPeriodNo(pos.anchorDate).n:0);
+    if(inf&&nSince>0){
+      var basicPer=inf.annual/cum.period.of;
+      pen+=hsePension(basicPer,cum.period.of,asAt)*nSince;
+      asc+=hseASC(basicPer,cum.period.of,asAt)*nSince;
+    }
+  }
+  var total=cum.tax+cum.usc+prsi+ae+pen+asc,stopTotal=stopTax+stopUsc+prsi+ae+pen+asc;
+  var other=taxOther()*cum.period.n;
+  var paidTotal=pos.anchored?(pos.paid.tax+pos.paid.usc+pos.paid.prsi+pos.paid.ae+pos.paid.pension+pos.paid.asc):null;
+  return {gross:g,tax:cum.tax,usc:cum.usc,prsi:prsi,ae:ae,pension:pen,asc:asc,total:total,other:other,net:g-total-other,
+    period:cum.period,asAt:asAt,stopTotal:stopTotal,refundIfStop:total-stopTotal,
+    anchored:pos.anchored,anchorDate:pos.anchorDate,paidTotal:paidTotal,
+    drift:(paidTotal===null)?null:(paidTotal-total),rates:c.r,srcop:c.srcop,credits:c.credits};
+}
+// Deduction on a slice of pay sitting on top of cumulative position g0. Income
+// tax, USC and auto enrolment are cumulative, so they come out of the difference.
+// PRSI is charged on the pay period the money falls into.
+function ieSlice(amount,g0,periodGross,ds,g0Usc){
+  if(!(amount>0))return {deduct:0,keep:0,rate:0};
+  var c=taxCfg(ds),u0=(g0Usc===undefined||g0Usc===null)?g0:g0Usc;
+  var d=ieCumulativeTax(g0+amount,ds).tax-ieCumulativeTax(g0,ds).tax;
+  d+=ieCumulativeUSC(u0+amount,ds)-ieCumulativeUSC(u0,ds);
+  d+=iePRSI(periodGross+amount,c.r)-iePRSI(periodGross,c.r);
+  d+=ieAEPeriod(amount,c);
+  d=Math.max(0,Math.min(amount,d));
+  return {deduct:d,keep:amount-d,rate:d/amount};
+}
+// An extra shift, on top of where you already are this year.
+function ieMarginal(amount,ds){
+  var pos=taxPosition(ds),pk=getPeriodKey(ds),buckets=grossByPeriod(null,null);
+  var logged=(buckets[pk]&&buckets[pk].gross)||0;
+  // PRSI has a per-period threshold, so the marginal rate depends on everything
+  // landing in that period, not just what is logged here. Salary never is, and
+  // on HSE payroll it is most of it, so fall back to the average period pay the
+  // year to date implies.
+  var p=taxPeriodNo(ds),avg=(p.n>0)?(pos.gross/p.n):0;
+  return ieSlice(amount,pos.taxable,Math.max(logged,avg),ds,pos.uscable);
+}
+// A whole payslip is the gap between this period's cumulative position and the
+// previous payslip's. The extra periods of credits and cut off picked up in
+// between are why a payslip can deduct far less than the marginal rate on an
+// extra shift, and why quiet weeks make the next payslip cheap. With a payslip
+// anchor the previous position is exact, gaps included.
+function ieNetOfPayslip(amount,ds){
+  var c=taxCfg(ds),pos=taxPosition(ds),p=taxPeriodNo(ds);
+  var pen=0,asc=0;
+  if(edHSE()){var bd=hseBasicDeductions(ds,p.of);pen=bd.pension;asc=bd.asc;}
+  var addTax=amount-pen-asc,addUsc=amount;
+  var g1=Math.max(pos.taxable,addTax),g0=g1-addTax,prevN=Math.max(0,p.n-1);
+  var u1=Math.max(pos.uscable,addUsc),u0=u1-addUsc;
+  if(pos.anchored){
+    var an=taxPeriodNo(pos.anchorDate).n;
+    if(an<p.n)prevN=an;
+  }
+  var d=ieCumulativeTax(g1,ds,p.n).tax-ieCumulativeTax(g0,ds,prevN).tax;
+  d+=ieCumulativeUSC(u1,ds,p.n)-ieCumulativeUSC(u0,ds,prevN);
+  d+=iePRSI(amount,c.r)+ieAEPeriod(amount,c)+pen+asc+taxOther();
+  d=Math.max(0,Math.min(amount,d));
+  return {deduct:d,keep:amount-d,rate:d/amount};
+}
+function syncHpcText(){
+  var el=document.getElementById('hpc-gross');if(!el)return;
+  el.textContent=taxOn()?'Net figures estimate income tax, USC, PRSI and auto enrolment from the settings above. They are estimates, not tax advice.':'Shows gross pay only. Tax, USC, PRSI and pension are not deducted.';
+}
+function setTaxOn(){var t=ensureTax();t.on=!t.on;persist();renderTaxSetup();syncHpcText();renderSummary();renderTotals();refreshLog();}
+function setTaxAE(){var t=ensureTax();t.ae=!(t.ae!==false);persist();renderTaxSetup();renderSummary();renderTotals();refreshLog();}
+function setTaxField(k,v){var t=ensureTax();t[k]=v;persist();renderSummary();renderTotals();refreshLog();}
+function setTaxYtd(k,v){var t=ensureTax();t.ytd[k]=v;persist();renderSummary();renderTotals();refreshLog();}
+function clearTaxAnchor(){var t=ensureTax();t.ytd=null;ensureTax();persist();renderTaxSetup();renderSummary();renderTotals();refreshLog();}
+function taxNumField(lbl,key,val,warn){
+  var info=TAX_INFO[key];
+  var dot=info?('<button type="button" class="info-dot" onclick="showInfo(event,this,\''+key+'\')">?</button>'):'';
+  var flag=warn?('<span class="tiny" style="color:var(--warn);display:block;margin-top:3px">'+warn+'</span>'):'';
+  return '<div class="field"><label class="lbl">'+lbl+dot+'</label><input type="number" inputmode="decimal" step="0.01" value="'+esc(val==null?'':val)+'" placeholder="0.00" onchange="setTaxYtd(\''+key+'\',this.value)">'+flag+'</div>';
+}
+// Two cheap sanity checks that catch the likeliest transcription slips: reading
+// the wrong row, or pairing figures with the wrong pay date. Kept terse on purpose.
+// Sanity checks on the transcription. These only flag things that cannot be
+// right, never things that merely look unusual: a cut off split across two
+// agencies is legitimately far from the standard figure, so crying wolf there
+// would train people to ignore the warning.
+function taxAnchorWarnings(c){
+  var w={},a=c.ytd;
+  if(!a)return w;
+  var num=function(v){var x=parseFloat(v);return isNaN(x)?null:x;};
+  var taxable=num(a.taxableTd),prsiable=num(a.prsiableTd),gross=num(a.gross),
+      pen=num(a.pensionTd),asc=num(a.ascTd);
+  // Tax is charged on a smaller base than USC and PRSI, never a larger one.
+  if(taxable!==null&&prsiable!==null&&taxable>prsiable+0.01)w.taxableTd='Recheck figure';
+  // The payslip's own identity: taxable pay is gross less pension and ASC, and
+  // less any non-taxable payments, so it can never exceed gross less those two.
+  if(taxable!==null&&gross!==null&&pen!==null&&asc!==null&&taxable>gross-pen-asc+0.01)w.taxableTd='Recheck figure';
+  if(prsiable!==null&&gross!==null&&prsiable>gross+0.01)w.prsiableTd='Recheck figure';
+  // Order-of-magnitude slips, the realistic typo. Deliberately wide.
+  var col=edHSE()?'Use the Year to Date column':'Use the T.D. figure';
+  var dCut=annualFromToDate(a.cutoffTd,a.date),dCred=annualFromToDate(a.creditTd,a.date);
+  if(dCut!==null){if(dCut<9000)w.cutoffTd=col;else if(dCut>150000)w.cutoffTd='Recheck figure';}
+  if(dCred!==null){if(dCred<800)w.creditTd=col;else if(dCred>20000)w.creditTd='Recheck figure';}
+  return w;
+}
+function renderTaxSetup(){
+  var box=document.getElementById('tax-container'),hdr=document.getElementById('tax-hdr');
+  if(!box||!hdr)return;
+  if(!edTax()){box.style.display='none';hdr.style.display='none';return;}
+  box.style.display='';hdr.style.display='';
+  var t=ensureTax(),c=taxCfg(),on=!!t.on,a=t.ytd,r=c.r;
+  var h='<div class="card" style="display:flex;flex-direction:column;gap:14px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:14px"><div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Estimate net pay</div><div class="tiny">Shows what you keep after income tax, USC, PRSI and auto enrolment.</div></div><button class="toggle'+(on?' on':'')+'" onclick="setTaxOn()"></button></div>';
+  if(on){
+    if(!c.ytd)h+='<div class="tiny" style="color:var(--warn);line-height:1.6">Fill in the payslip anchor below. Without it the estimate counts only the shifts logged in this app, so it will overstate what you keep.</div>';
+    // The anchor comes first because it is the one thing with no sensible
+    // default: it is what tells the calculation where you are in the tax year.
+    h+='<div class="field"><label class="lbl">Other deductions each payslip<button type="button" class="info-dot" onclick="showInfo(event,this,\'other\')">?</button></label><input type="number" inputmode="decimal" step="0.01" value="'+esc(t.other==null?'':t.other)+'" placeholder="0.00" onchange="setTaxField(\'other\',this.value)"></div>';
+    h+='<details'+(c.ytd?'':' open')+'><summary style="font-size:14px;font-weight:600;padding:9px 0;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line-soft)"><span>Payslip anchor<span style="font-weight:500;color:'+(c.ytd?'var(--muted)':'var(--warn)')+'"> · '+(c.ytd?'set':'needed')+'</span></span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></span></summary>';
+    h+='<div class="tiny" style="margin:4px 0 12px;line-height:1.6">Year to date figures from your <b>most recent</b> payslip'+(edHSE()?', from the block at the bottom headed Year to Date':'')+'. Update it each payslip.</div>';
+    h+='<div class="field" style="margin-bottom:12px"><label class="lbl">Payslip date</label><input type="date" value="'+esc(a.date||'')+'" onchange="setTaxYtd(\'date\',this.value)"></div>';
+    // Field names are copied from the payslip itself so it is a matching
+    // exercise rather than one that needs the jargon understood.
+    var warn=taxAnchorWarnings(c);
+    var req=edHSE()
+      ?[['Taxable Pay','taxableTd'],['PRSIable Pay','prsiableTd'],['Tax Cut Off','cutoffTd'],['Tax Credits','creditTd']]
+      :[['Gross pay','gross'],['Std cut-off T.D.','cutoffTd'],['Tax credit T.D.','creditTd']];
+    var opt=edHSE()
+      ?[['Gross Pay','gross'],['Tax paid','tax'],['USC Payable','usc'],['Ee PRSI ctrb.','prsi'],['Pension','pensionTd'],['ASC / PRD','ascTd']]
+      :[['Tax paid T.D.','tax'],['USC','usc'],['PRSI','prsi'],['Auto enrolment','ae']];
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+    req.forEach(function(f){h+=taxNumField(f[0],f[1],a[f[1]],warn[f[1]]);});
+    h+='</div>';
+    h+='<div class="tiny" style="margin:14px 0 6px;font-weight:600;color:var(--ink)">Optional</div>';
+    h+='<div class="tiny" style="margin-bottom:8px;line-height:1.6">Skip these and you still get the per shift figure. Fill them in and the Totals tab can also show your tax for the whole year, and whether you are owed anything back.</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+    opt.forEach(function(f){h+=taxNumField(f[0],f[1],a[f[1]],warn[f[1]]);});
+    h+='</div>';
+    if(c.ytd)h+='<button class="btn-ghost" style="margin-top:12px;padding-left:0" onclick="clearTaxAnchor()">Clear anchor</button>';
+    h+='</details>';
+    if(!edHSE())h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:14px"><div><div style="font-size:14px;font-weight:600;margin-bottom:2px">Auto enrolment</div><div class="tiny">My Future Fund, 1.5% of gross. Applies if you are 23 to 60, earn over €'+r.ae.minAnnual.toLocaleString('en-IE')+' and have no workplace pension.</div></div><button class="toggle'+(c.ae?' on':'')+'" onclick="setTaxAE()"></button></div>';
+    // Optional overrides. Normally these are read back out of the anchor, so
+    // they are tucked away and never presented as an alternative to it.
+    var manualBand=(!isNaN(parseFloat(t.srcop))||!isNaN(parseFloat(t.credits)));
+    var bandState=manualBand?'set by hand':((c.derivedSrcop!=null||c.derivedCredits!=null)?'from your payslip':'using defaults');
+    var srcSet=!isNaN(parseFloat(t.srcop)),credSet=!isNaN(parseFloat(t.credits));
+    var srcHint=srcSet?'Set by hand. Clear it to use your payslip figure.'
+      :(c.derivedSrcop!=null?('From your payslip: €'+c.derivedSrcop.toLocaleString('en-IE')+' a year.')
+      :('Using the default €'+r.srcop.toLocaleString('en-IE')+'. Revenue splits this if you work for more than one agency.'));
+    var credHint=credSet?'Set by hand. Clear it to use your payslip figure.'
+      :(c.derivedCredits!=null?('From your payslip: €'+c.derivedCredits.toLocaleString('en-IE')+' a year.')
+      :('Using the default €'+r.credits.toLocaleString('en-IE')+', the single person plus PAYE credit.'));
+    h+='<details><summary style="font-size:14px;font-weight:600;padding:9px 0;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line-soft)"><span>Cut off and credits<span style="font-weight:500;color:var(--muted)"> · '+bandState+'</span></span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></span></summary>';
+    h+='<div class="tiny" style="margin:4px 0 12px;line-height:1.6">Optional. These are worked out from the payslip anchor above. Only set them here if your payslip disagrees.</div>';
+    h+='<div class="field" style="margin-bottom:10px"><label class="lbl">Standard rate cut off, yearly</label><input type="number" inputmode="decimal" value="'+esc(t.srcop==null?'':t.srcop)+'" placeholder="'+(c.derivedSrcop!=null?c.derivedSrcop:r.srcop)+'" onchange="setTaxField(\'srcop\',this.value)"><span class="tiny">'+srcHint+'</span></div>';
+    h+='<div class="field"><label class="lbl">Tax credits, yearly</label><input type="number" inputmode="decimal" value="'+esc(t.credits==null?'':t.credits)+'" placeholder="'+(c.derivedCredits!=null?c.derivedCredits:r.credits)+'" onchange="setTaxField(\'credits\',this.value)"><span class="tiny">'+credHint+'</span></div>';
+    h+='</details>';
+    h+='<div class="tiny" style="line-height:1.6;padding-top:10px;border-top:1px solid var(--line-soft)">'+esc(r.label)+'. An estimate, not tax advice.</div>';
+  }
+  h+='</div>';
+  box.innerHTML=h;
+}
 function getNextPayslipDate(){
   if(!settings.nextPayslipDate)return null;
   var p=settings.nextPayslipDate.split('-'),d=new Date(+p[0],+p[1]-1,+p[2],12,0,0,0);
@@ -1320,6 +1814,10 @@ function refreshLog(){
     html+='<div class="lbl" style="margin-bottom:6px">This shift pays</div>';
     html+='<div class="bk-amt">\u20ac'+fmted+'<span style="font-size:.55em;opacity:.7">.'+(parts[1]||'00')+'</span></div>';
     html+='<div class="tiny" style="margin-bottom:2px">'+totalH.toFixed(1)+'h gross'+(callOpts?' \u00b7 '+(onsiteMin/60).toFixed(1)+'h on site, '+((shiftTotMin-onsiteMin)/60).toFixed(1)+'h on call':'')+'</div>';
+    if(taxOn()&&totalAmt>0){
+      var mg=ieMarginal(totalAmt,date);
+      html+='<div class="tiny" style="margin-bottom:2px;color:var(--blue);font-weight:600">You keep about '+fmtEUR(mg.keep)+' \u00b7 '+Math.round(mg.rate*100)+'% in deductions</div>';
+    }
     html+=buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,'light',logEndsNextDay,callOpts,tierBase?JSON.parse(JSON.stringify(tierBase)):undefined);
     if(split.length>0){
       html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:8px">';
@@ -1506,12 +2004,27 @@ function renderSummary(){
     });
   });
   var payslipD=getNextPayslipDate(),payslipStr=fmtPayslipDate(payslipD);
-  var eps=nextPay.toFixed(2).split('.'),efmt=eps[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
-  var html='<div class="hero"><div class="hero-lbl">Est. Gross &middot; Next Payslip</div>';
-  html+='<div class="hero-num">\u20ac'+efmt+'<span class="cent">.'+(eps[1]||'00')+'</span></div>';
-  html+='<div class="hero-tiny">Pay earned this '+payPeriodLabel()+', plus deferred amounts from previous '+payPeriodLabel()+'s</div>';
+  // Net is what people actually want from this screen: what lands in the bank
+  // next payslip. Gross becomes the supporting line. Net needs the payslip
+  // anchor to be right, so without one show gross rather than a wrong net.
+  if(edHSE()){
+    var hb=hseBasicForPeriod(dateStr(new Date()),taxPeriodNo(dateStr(new Date())).of);
+    if(hb>0){
+      nextPay+=hb;
+      byBand['hse_basic']={id:'hse_basic',name:'Basic pay',color:'#2563eb',hours:0,amount:hb};
+    }
+  }
+  var showNet=taxOn()&&nextPay>0&&!!taxCfg().ytd;
+  var hn=showNet?ieNetOfPayslip(nextPay,dateStr(new Date())):null;
+  var headline=showNet?hn.keep:nextPay;
+  var eps=headline.toFixed(2).split('.'),efmt=eps[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  var html='<div class="hero"><div class="hero-lbl">'+(showNet?'Est. Take Home':'Est. Gross')+' &middot; Next Payslip</div>';
+  html+='<div class="hero-num">€'+efmt+'<span class="cent">.'+(eps[1]||'00')+'</span></div>';
+  if(showNet)html+='<div class="hero-tiny">'+fmtEUR(nextPay)+' gross, less '+fmtEUR(hn.deduct)+' in deductions</div>';
+  else html+='<div class="hero-tiny">Pay earned this '+payPeriodLabel()+', plus deferred amounts from previous '+payPeriodLabel()+'s</div>';
   if(settings.nextPayslipDate)html+='<div class="hero-tiny" style="margin-top:4px">Period ends <span class="hero-pill">'+payslipStr+'</span></div>';
-  html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">Calculates your gross pay before tax, USC, PRSI and pension. Verify against your payslip.</div>';
+  if(taxOn()&&nextPay>0&&!showNet)html+='<div class="hero-tiny" style="margin-top:8px">Add your payslip anchor in Setup to see take home</div>';
+  html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">'+(showNet?'Estimate. Verify against your payslip.':'Gross only, before tax, USC, PRSI and pension.')+'</div>';
   html+='</div>';
   var bandArr=[];for(var k in byBand){byBand[k].id=k;bandArr.push(byBand[k]);}stableBandOrder(bandArr);
   var totalAmt=bandArr.reduce(function(a,b){return a+b.amount;},0)||1;
@@ -1519,7 +2032,7 @@ function renderSummary(){
     html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:12px">Next payslip breakdown</div><div class="bar-track">';
     for(var i=0;i<bandArr.length;i++)html+='<div class="bar-seg" style="background:'+bandArr[i].color+';width:'+(bandArr[i].amount/totalAmt*100)+'%"></div>';
     html+='</div>';
-    for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span></span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
+    for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span>'+(b.hours>0?'<span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span>':'')+'</span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
     html+='<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;margin-top:2px"><span style="font-size:13px;font-weight:700">Total</span><span style="font-family:Fraunces,serif;font-size:22px;font-weight:600;color:var(--blue);letter-spacing:-0.01em">'+fmtEUR(bandArr.reduce(function(a,b){return a+b.amount;},0))+'</span></div>';
     html+='</div></div>';
   }
@@ -1600,6 +2113,31 @@ function renderTotals(){
   html+='<div class="hero" id="totals-hero" style="touch-action:pan-y"><div class="hero-lbl">Total gross · '+rangeLabel+((totalsRange==='month'||totalsRange==='year')?' <span style="opacity:.5;font-weight:400">· swipe ‹ ›</span>':'')+'</div>';
   html+='<div class="hero-num">€'+fpInt+'<span class="cent">.'+(fp[1]||'00')+'</span></div>';
   html+='<div class="hero-tiny">'+totalHrs.toFixed(1)+'h · '+shiftCount+' shift'+(shiftCount!==1?'s':'')+(manualAmt>0?(' · '+fmtEUR(manualAmt)+' manual'):'')+'</div></div>';
+  if(taxOn()&&totalsRange==='year'){
+    var upto=(rangeEnd<now)?dateStr(rangeEnd):dateStr(now);
+    var est=ieEstimate(upto);
+    if(est.gross>0){
+      var taxRow=function(lbl,val,neg){return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="font-weight:500">'+lbl+'</span><span style="font-weight:600;font-variant-numeric:tabular-nums'+(neg?';color:var(--muted)':'')+'">'+(neg?'\u2212':'')+fmtEUR(val)+'</span></div>';};
+      html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:10px">Tax position \u00b7 '+rangeLabel+' \u00b7 period '+est.period.n+' of '+est.period.of+'</div>';
+      html+=taxRow('Gross',est.gross,false);
+      html+=taxRow('Income tax',est.tax,true);
+      html+=taxRow('USC',est.usc,true);
+      html+=taxRow('PRSI',est.prsi,true);
+      if(est.pension>0)html+=taxRow('Pension',est.pension,true);
+      if(est.asc>0)html+=taxRow('ASC',est.asc,true);
+      if(est.ae>0)html+=taxRow('Auto enrolment',est.ae,true);
+      if(est.other>0)html+=taxRow('Other deductions',est.other,true);
+      html+='<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px"><span style="font-size:13px;font-weight:700">Est. net</span><span style="font-family:Fraunces,serif;font-size:22px;font-weight:600;color:var(--blue);letter-spacing:-0.01em">'+fmtEUR(est.net)+'</span></div>';
+      if(!edHSE()&&est.refundIfStop>=1&&est.period.n<est.period.of){
+        html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)"><div style="font-size:13.5px;font-weight:600;color:var(--blue)">€'+fmtEUR(est.refundIfStop).slice(1)+' back if you earn nothing more in '+rangeLabel+'</div></div>';
+      }
+      if(est.drift!==null&&Math.abs(est.drift)>=5){
+        html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)"><div style="font-size:13.5px;font-weight:600;color:var(--warn);margin-bottom:3px">Does not match your payslip</div><div class="tiny">Out by '+fmtEUR(Math.abs(est.drift))+'. Recheck the anchor in Setup.</div></div>';
+      }
+      html+='<div class="tiny" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line-soft)">'+esc(est.rates.label)+(est.anchored?(' · anchored to '+fmtRangeDate(est.anchorDate)):' · no payslip anchor')+' · estimate only</div>';
+      html+='</div></div>';
+    }
+  }
   if(bandArr.length){
     var totalForBar=bandArr.reduce(function(a,b){return a+b.amount;},0)||1;
     html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:12px">Breakdown by band</div><div class="bar-track">';
@@ -2184,6 +2722,13 @@ function updateBandRate(id,v){var b=getBand(id);if(b)b.rate=parseFloat(v)||0;}
 function updateBandSlip(id,v){var b=getBand(id);if(b){b.slip=parseInt(v)||0;b.arrears=b.slip;}}
 function toggleDay(id,d){var b=getBand(id);if(!b)return;if(!b.days)b.days=[];var i=b.days.indexOf(d);i===-1?b.days.push(d):b.days.splice(i,1);renderBands();}
 function addBand(site){if(bandEditSnapshot)revertBandEdit();var color=PALETTE[bands.length%PALETTE.length],newId='band_'+Date.now();var nb={id:newId,name:site==='offsite'?'New call band':'New Band',color:color,rate:0,days:[],start:site==='offsite'?'00:00':'09:00',end:site==='offsite'?'24:00':'17:00',slip:0,kind:'premium'};if(site==='offsite')nb.site='offsite';bands.push(nb);openBandId=newId;persist();renderBands();}
+function keepBandInView(id,fn){
+  var el=document.getElementById('bc-'+id),top=el?el.getBoundingClientRect().top:null;
+  fn();
+  if(top===null)return;
+  var after=document.getElementById('bc-'+id);
+  if(after)window.scrollBy(0,after.getBoundingClientRect().top-top);
+}
 function saveBand(id){
   var b=getBand(id);
   var needBackfill=false;
@@ -2204,7 +2749,7 @@ function saveBand(id){
       pendingBackfill={id:id,rate:b.rate||0,slip:b.slip||0,name:b.name||'this band',doRate:rateChanged,doSlip:slipChanged,doName:nameChanged,doStruct:structChanged};
     }
   }
-  bandEditSnapshot=null;persist();openBandId=null;renderBands();
+  bandEditSnapshot=null;persist();openBandId=null;keepBandInView(id,renderBands);
   var ok=document.getElementById('save-ok');if(ok){ok.classList.add('on');setTimeout(function(){ok.classList.remove('on');},2200);}
   if(needBackfill)openBackfillSheet();else toast('Band saved');
 }
@@ -2280,13 +2825,14 @@ function saveTpl(id){
 }
 function deleteTpl(id){shiftTemplates=shiftTemplates.filter(function(t){return String(t.id)!==String(id);});editingTplId=null;persist();renderTemplates();renderTplChips();toast('Template removed');}
 
-function editionLabel(ed){return ed==='hse'?'HSE':(ed==='locum'?'Locum':'Standard');}
+function editionLabel(ed){return ed==='hse'?'HSE':'Locum';}
 function openEditionSheet(){
   var b=document.getElementById('edition-sheet-body');
   if(b){
     var html='';
-    ['base','hse','locum'].forEach(function(ed){
-      var cur=ed===edition;
+    // `base` is an alias of `locum`, so it is not offered as a third choice.
+    ['locum','hse'].forEach(function(ed){
+      var cur=(ed===edition)||(ed==='locum'&&edition==='base');
       html+='<button class="'+(cur?'btn-primary':'btn-secondary')+'" style="margin-top:10px" onclick="setEdition(\''+ed+'\')">'+editionLabel(ed)+(cur?' (current)':'')+'</button>';
     });
     b.innerHTML=html;
@@ -2333,8 +2879,23 @@ window.addEventListener('appinstalled',function(){deferredInstallPrompt=null;upd
 function isStandalone(){try{if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)return true;if(window.navigator&&window.navigator.standalone===true)return true;}catch(e){}return false;}
 function isIOSDevice(){var ua=navigator.userAgent||'';if(/iPad|iPhone|iPod/.test(ua))return true;if(/^Mac/.test(navigator.platform||'')&&navigator.maxTouchPoints>1)return true;return false;}
 function isAndroidDevice(){return /Android/i.test(navigator.userAgent||'');}
+// Samsung Internet mints its own WebAPK with an outdated targetSdkVersion, which
+// Android 14+ then blocks with a Play Protect "Unsafe app blocked" warning. The
+// same manifest installs cleanly from Chrome, so hand the user over to it.
+function isSamsungInternet(){return /SamsungBrowser/i.test(navigator.userAgent||'');}
+function openInChrome(){
+  var u=location.href.split('#')[0].replace(/^https?:\/\//,'');
+  location.href='intent://'+u+'#Intent;scheme=https;package=com.android.chrome;end';
+}
 function updateInstallVisibility(){var el=document.getElementById('install-menu-item');if(el)el.style.display=isStandalone()?'none':'';}
 function showInstallModal(){
+  if(isSamsungInternet()){
+    var sbox=document.getElementById('install-instructions');
+    if(sbox)sbox.innerHTML='<div class="tiny" style="line-height:1.7;margin-bottom:12px">Samsung Internet builds its own app package, and Android blocks it with a <b style="color:var(--ink)">Play Protect</b> warning. Installing from Chrome avoids that.</div><button class="btn-primary" onclick="openInChrome()">Open in Chrome</button><div class="tiny" style="margin-top:12px;line-height:1.7">Then tap the three dot menu and <b style="color:var(--ink)">Install app</b>.</div>';
+    document.getElementById('install-scrim').className='scrim open';
+    document.getElementById('install-sheet').className='sheet open';
+    return;
+  }
   if(deferredInstallPrompt){
     var p=deferredInstallPrompt;deferredInstallPrompt=null;
     p.prompt();
@@ -2353,7 +2914,7 @@ function showInstallModal(){
 }
 function closeInstallModal(){document.getElementById('install-scrim').className='scrim';document.getElementById('install-sheet').className='sheet';}
 
-function showPwaBanner(){var isInstalled=false;try{if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)isInstalled=true;if(window.navigator&&window.navigator.standalone===true)isInstalled=true;}catch(e){}var dismissed=false;try{dismissed=localStorage.getItem('shiftpay.pwa.dismissed')==='1';}catch(e){}if(isInstalled||dismissed)return;if(isAndroidDevice()&&!deferredInstallPrompt)return;var banner=document.getElementById('pwa-banner');if(banner)banner.classList.remove('hidden');}
+function showPwaBanner(){var isInstalled=false;try{if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)isInstalled=true;if(window.navigator&&window.navigator.standalone===true)isInstalled=true;}catch(e){}var dismissed=false;try{dismissed=localStorage.getItem('shiftpay.pwa.dismissed')==='1';}catch(e){}if(isInstalled||dismissed)return;if(isAndroidDevice()&&!deferredInstallPrompt&&!isSamsungInternet())return;var banner=document.getElementById('pwa-banner');if(banner)banner.classList.remove('hidden');}
 function dismissPwaBanner(){try{localStorage.setItem('shiftpay.pwa.dismissed','1');}catch(e){}var banner=document.getElementById('pwa-banner');if(banner)banner.classList.add('hidden');}
 
 function go(pg,btn){
@@ -2548,6 +3109,8 @@ if(edHSE()){
   var bandsHdrT=document.getElementById('bands-hdr-title');if(bandsHdrT)bandsHdrT.textContent='Your pay';
   var bandsHdrA=document.getElementById('bands-hdr-add');if(bandsHdrA)bandsHdrA.style.display='none';
 }
+renderTaxSetup();
+syncHpcText();
 var psEl=document.getElementById('period-select');if(psEl)psEl.value=settings.periodType;
 var pdEl=document.getElementById('payslip-date-input');if(pdEl)pdEl.value=settings.nextPayslipDate||'';
 if(navigator.storage&&navigator.storage.persist){try{navigator.storage.persist().catch(function(){});}catch(e){}}
@@ -2561,6 +3124,7 @@ initSheetSwipe('install-sheet',closeInstallModal);
 initSheetSwipe('edit-sheet',cancelEdit);
 initSheetSwipe('backfill-sheet',function(){closeBackfillSheet(false);});
 initSheetSwipe('edition-sheet',closeEditionSheet);
+initSheetSwipe('pay-sheet',closePaySheet);
 }
 
 // === TEST HARNESS: append ?test=1 to run calc suite. Does not touch localStorage. ===
@@ -2742,6 +3306,8 @@ initSheetSwipe('edition-sheet',closeEditionSheet);
     return h;
   }
 
+  var FIXTURES=null;
+  function fixtureSkip(id,what){return [{sc:{id:id,desc:what+' fixtures absent (data/payslip-fixtures.json), checks skipped'},expected:'skipped',actual:'skipped',pass:true}];}
   function approx(a,b,tol){return Math.abs(a-b)<=(tol===undefined?0.01:tol);}
   function runHseTests(){
     var R=[];
@@ -2749,7 +3315,7 @@ initSheetSwipe('edition-sheet',closeEditionSheet);
     var codes=[['1554','Intern'],['1012','SHO'],['1538','Registrar'],['1628','Specialist Registrar'],['1627','Senior Registrar']];
     codes.forEach(function(c,i){
       var jun=hseHourly(c[0],1,'2026-07-01'),feb=hseHourly(c[0],1,'2026-03-01'),g=hseGrade(c[0]);
-      var expJ=g.scales['2026-06-01'][0]/52.18/39,expF=g.scales['2026-02-01'][0]/52.18/39;
+      var expJ=g.scales['2026-06-01'][0]/HSE_WEEK_DIVISOR/39,expF=g.scales['2026-02-01'][0]/HSE_WEEK_DIVISOR/39;
       t('H1.'+(i+1),c[1]+' pt1 hourly, June and Feb editions',{jun:+expJ.toFixed(2),feb:+expF.toFixed(2)},{jun:+jun.hourly.toFixed(2),feb:+feb.hourly.toFixed(2)},
         jun.scaleEdition==='2026-06-01'&&feb.scaleEdition==='2026-02-01'&&approx(jun.hourly,expJ,1e-9)&&approx(feb.hourly,expF,1e-9));
     });
@@ -2860,9 +3426,281 @@ initSheetSwipe('edition-sheet',closeEditionSheet);
     return R;
   }
 
-  var results=scenarios.map(runScenario);
-  loadHseData().then(function(){
-    results=results.concat(runHseTests());
+
+  function runTaxTests(){
+    var R=[];
+    function t(id,desc,expected,actual,pass){R.push({sc:{id:id,desc:desc},expected:expected,actual:actual,pass:!!pass});}
+    var prevS=JSON.parse(JSON.stringify(settings)),prevSh=shifts,prevM=manualEntries,prevEd=edition;
+    edition='locum';settings.periodType='weekly';
+    settings.tax={on:true,srcop:'',credits:'',ae:false,ytd:null};
+    var r=ieRates('2026-06-01'),rOct=ieRates('2026-11-01');
+
+    t('X1','Rate table is keyed by date, so PRSI steps on 1 October 2026',{jun:0.042,nov:0.0435},{jun:r.prsi,nov:rOct.prsi},r.prsi===0.042&&rOct.prsi===0.0435);
+    t('X1b','A date before the table clamps to the first entry rather than failing',0.042,ieRates('2024-05-01').prsi,ieRates('2024-05-01').prsi===0.042);
+    t('X2','Income tax on 60,000: 44,000 at 20% plus 16,000 at 40%, less 4,000 credits',11200,+ieIncomeTax(60000,44000,4000).toFixed(2),approx(ieIncomeTax(60000,44000,4000),11200));
+    t('X3','Credits can wipe out the tax but never go negative',0,ieIncomeTax(12000,44000,4000),ieIncomeTax(12000,44000,4000)===0);
+    t('X4','USC on 60,000 across the 0.5, 2 and 3 per cent bands',1332.82,+ieUSC(60000,r).toFixed(2),approx(ieUSC(60000,r),1332.82));
+    t('X5','USC on 80,000 reaches the 8 per cent band above 70,044',2430.62,+ieUSC(80000,r).toFixed(2),approx(ieUSC(80000,r),2430.62));
+    t('X6','USC exemption applies at or below 13,000',0,ieUSC(12000,r),ieUSC(12000,r)===0);
+    t('X7','Just over the exemption the full band charge applies, with no taper',89.82,+ieUSC(13500,r).toFixed(2),approx(ieUSC(13500,r),89.82));
+    t('X8','PRSI: 1,000 in a week is 4.2% of the whole amount, not just the excess',42,+iePRSI(1000,r).toFixed(2),approx(iePRSI(1000,r),42));
+    t('X9','PRSI: nothing at or below the 352 weekly threshold',0,iePRSI(352,r),iePRSI(352,r)===0);
+    t('X10','PRSI: tapered credit applies between 352 and 424',12.80,+iePRSI(400,r).toFixed(2),approx(iePRSI(400,r),12.80));
+    t('X11','PRSI: a week in November uses the 4.35% October rate',43.50,+iePRSI(1000,rOct).toFixed(2),approx(iePRSI(1000,rOct),43.50));
+    settings.periodType='monthly';
+    t('X12','PRSI thresholds scale with a monthly pay period',+(4000*0.042).toFixed(2),+iePRSI(4000,r).toFixed(2),approx(iePRSI(4000,r),4000*0.042));
+    settings.periodType='weekly';
+    t('X13','Auto enrolment is 1.5% of gross, and nothing at or below 20,000',{at19k:0,at60k:900},{at19k:ieAE(19000,r,true),at60k:+ieAE(60000,r,true).toFixed(2)},ieAE(19000,r,true)===0&&approx(ieAE(60000,r,true),900));
+    t('X14','Auto enrolment is capped at 80,000 of salary',1200,+ieAE(90000,r,true).toFixed(2),approx(ieAE(90000,r,true),1200));
+
+    // Marginal rates are decided against the PRORATED cut off, not the annual
+    // one. On 1 June 2026 (week 22) the cumulative cut off is 846.16 x 22.
+    var CUT22=18615.52;
+    t('X15a','Per-period cut off is rounded up to the cent, then multiplied by the period',
+      CUT22,+(perPeriodUp(44000,52)*22).toFixed(2),approx(perPeriodUp(44000,52)*22,CUT22,0.005));
+    var sl1=ieSlice(500,10000,0,'2026-06-01');
+    t('X15','Below the prorated cut off a slice loses 20% tax, 2% USC and 4.2% PRSI',{deduct:131,keep:369},{deduct:+sl1.deduct.toFixed(2),keep:+sl1.keep.toFixed(2)},approx(sl1.deduct,131,0.02));
+    var sl2=ieSlice(500,25000,0,'2026-06-01');
+    t('X16','Above the prorated cut off it loses 40% tax, 3% USC and 4.2% PRSI',{deduct:236,keep:264},{deduct:+sl2.deduct.toFixed(2),keep:+sl2.keep.toFixed(2)},approx(sl2.deduct,236,0.02));
+    var sl3=ieSlice(500,72000,0,'2026-06-01');
+    t('X17','Past the prorated 8% USC ceiling the slice loses 52.2%',{deduct:261,keep:239},{deduct:+sl3.deduct.toFixed(2),keep:+sl3.keep.toFixed(2)},approx(sl3.deduct,261,0.02));
+    var sl4=ieSlice(500,CUT22-200,0,'2026-06-01');
+    t('X18','A slice straddling the cut off is part 20% and part 40%',+(200*0.2+300*0.4+15+21).toFixed(2),+sl4.deduct.toFixed(2),approx(sl4.deduct,200*0.2+300*0.4+15+21,0.02));
+    settings.tax.ae=true;
+    var sl5=ieSlice(500,25000,0,'2026-06-01');
+    t('X19','Auto enrolment adds 1.5 points to the marginal deduction',+(236+7.5).toFixed(2),+sl5.deduct.toFixed(2),approx(sl5.deduct,243.5,0.02));
+    settings.tax.ae=false;
+    // The payslip rate and the marginal rate are different numbers. A quiet spell
+    // banks unused credits and cut off, so the next payslip is taxed lightly even
+    // though one more shift in that week would still be taxed at the margin.
+    var quiet=ieSlice(735,47894.75,0,'2026-09-04');
+    t('X19b','An extra shift is taxed at the margin even when the payslip itself is not',
+      true,quiet.rate>0.40&&quiet.rate<0.60,quiet.rate>0.40&&quiet.rate<0.60);
+
+    manualEntries=[];
+    shifts=[{id:7001,date:'2026-03-02',start:'09:00',end:'17:00',tp:3000,th:8,split:[]},
+            {id:7002,date:'2026-03-09',start:'09:00',end:'17:00',tp:2000,th:8,split:[]}];
+    var e1=ieEstimate('2026-03-31');
+    t('X20','Unanchored: position is taken as at the last pay date, not today',
+      {gross:5000,period:11,tax:153.77,usc:61.89,prsi:210},
+      {gross:+e1.gross.toFixed(2),period:e1.period.n,tax:+e1.tax.toFixed(2),usc:+e1.usc.toFixed(2),prsi:+e1.prsi.toFixed(2)},
+      approx(e1.gross,5000)&&e1.period.n===11&&approx(e1.tax,153.77,0.02)&&approx(e1.usc,61.89,0.02)&&approx(e1.prsi,210,0.02));
+    settings.tax.ytd={date:'2026-03-05',gross:40000,tax:5000,usc:800,prsi:1700,ae:0};
+    var e2=ieEstimate('2026-03-31');
+    t('X21','Anchored: work paid after the anchor date is added, even if worked before it',45000,+e2.gross.toFixed(2),approx(e2.gross,45000));
+    t('X22','Anchored: the stop-now liability uses full annual bands and credits',
+      7992.82,+e2.stopTotal.toFixed(2),approx(e2.stopTotal,7992.82,0.02));
+    t('X22b','Part way through the year the cumulative take always exceeds the stop-now liability',
+      true,e2.total>e2.stopTotal&&approx(e2.refundIfStop,e2.total-e2.stopTotal,0.01),
+      e2.total>e2.stopTotal&&approx(e2.refundIfStop,e2.total-e2.stopTotal,0.01));
+    settings.tax.ytd={date:'2025-11-30',gross:40000,tax:5000,usc:800,prsi:1700,ae:0};
+    var e3=ieEstimate('2026-03-31');
+    t('X23','An anchor from last year is ignored rather than carried into this one',{gross:5000,anchored:false},{gross:+e3.gross.toFixed(2),anchored:e3.anchored},approx(e3.gross,5000)&&e3.anchored===false);
+    // A week in arrears moves the shift into the next tax week, which is an
+    // extra period of credits and cut off against it. Confirmed on the real
+    // timesheets: work to Sunday 20 September was paid on the week 39 payslip.
+    settings.tax.ytd=null;manualEntries=[];
+    function payWeekWithSlip(slip){
+      shifts=[{id:8002,date:'2026-09-20',start:'09:00',end:'19:00',tp:1000,
+        split:[{id:'b1',name:'Day',color:'#000',hours:10,amount:1000,rate:100,slip:slip}]}];
+      var m=grossByPeriod('2026-01-01','2026-12-31'),k=Object.keys(m);
+      return k.length===1?taxPeriodNo(m[k[0]].ds).n:-1;
+    }
+    t('X24','Arrears route pay to a later payslip, and the tax week follows the pay date',
+      {paidSameWeek:38,paidAWeekLater:39},{paidSameWeek:payWeekWithSlip(0),paidAWeekLater:payWeekWithSlip(1)},
+      payWeekWithSlip(0)===38&&payWeekWithSlip(1)===39);
+    shifts=[];
+
+    settings=prevS;shifts=prevSh;manualEntries=prevM;edition=prevEd;
+    return R;
+  }
+
+
+  // Reconciliation fixtures: four real agency payslips (Sage Payroll, weekly,
+  // PRSI class A1, cumulative basis). Amounts only, no identifying data.
+  function runPayslipTests(){
+    var R=[];
+    function t(id,desc,expected,actual,pass){R.push({sc:{id:id,desc:desc},expected:expected,actual:actual,pass:!!pass});}
+    var prevS=JSON.parse(JSON.stringify(settings)),prevEd=edition;
+    edition='locum';settings.periodType='weekly';
+    settings.tax={on:true,srcop:'',credits:'',ae:true,ytd:null};
+    if(!FIXTURES||!FIXTURES.agency)return fixtureSkip('P0','Agency payslip');
+    var SLIPS=FIXTURES.agency;
+    SLIPS.forEach(function(s){
+      var p=taxPeriodNo(s.date);
+      t(s.id+'a','Pay date maps to tax week '+s.wk,s.wk,p.n,p.n===s.wk);
+      var cum=ieCumulative(s.ytd,s.date);
+      t(s.id+'b','Cumulative cut off and credits match the payslip to the cent',
+        {cutoff:s.cutoffTd,credits:s.credTd},{cutoff:+cum.cutoff.toFixed(2),credits:+cum.credits.toFixed(2)},
+        approx(cum.cutoff,s.cutoffTd,0.005)&&approx(cum.credits,s.credTd,0.005));
+      t(s.id+'c','Cumulative PAYE matches TAX PAID T.D.',s.payeTd,+cum.tax.toFixed(2),approx(cum.tax,s.payeTd,0.01));
+      t(s.id+'d','Cumulative USC matches the USC balance',s.uscTd,+cum.usc.toFixed(2),approx(cum.usc,s.uscTd,0.05));
+      var r=ieRates(s.date);
+      t(s.id+'e','Employee PRSI for the period matches',s.prsi,+iePRSI(s.gross,r).toFixed(2),approx(iePRSI(s.gross,r),s.prsi,0.01));
+      // The yearly cut off and credits are never printed, only the to-date ones.
+      t(s.id+'i','Yearly cut off and credits are recovered from the to-date figures',
+        {srcop:44000,credits:4000},
+        {srcop:annualFromToDate(s.cutoffTd,s.date),credits:annualFromToDate(s.credTd,s.date)},
+        annualFromToDate(s.cutoffTd,s.date)===44000&&annualFromToDate(s.credTd,s.date)===4000);
+      t(s.id+'f','Auto enrolment for the period matches',s.ae,+ieAEPeriod(s.gross,taxCfg(s.date)).toFixed(2),approx(ieAEPeriod(s.gross,taxCfg(s.date)),s.ae,0.01));
+      if(s.prevYtd!==null){
+        var prev=ieCumulative(s.prevYtd,s.date,s.prevWk);
+        var dTax=cum.tax-prev.tax,dUsc=cum.usc-prev.usc;
+        var deds=dTax+dUsc+iePRSI(s.gross,r)+ieAEPeriod(s.gross,taxCfg(s.date));
+        t(s.id+'g','Period PAYE and USC come out of the gap between two cumulative positions',
+          {paye:s.paye,usc:s.usc},{paye:+dTax.toFixed(2),usc:+dUsc.toFixed(2)},
+          approx(dTax,s.paye,0.02)&&approx(dUsc,s.usc,0.05));
+        t(s.id+'h','Whole payslip reproduces: total deductions and nett pay',
+          {deds:s.deds,nett:s.nett},{deds:+deds.toFixed(2),nett:+(s.gross-deds).toFixed(2)},
+          approx(deds,s.deds,0.06)&&approx(s.gross-deds,s.nett,0.06));
+      }
+    });
+    // PRSI stepped mid-sequence, which is why the rate table is keyed by date.
+    t('PR1','Week 39 is charged 4.2% and week 40 onwards 4.35%',{wk39:0.042,wk40:0.0435},
+      {wk39:ieRates('2026-09-25').prsi,wk40:ieRates('2026-10-02').prsi},
+      ieRates('2026-09-25').prsi===0.042&&ieRates('2026-10-02').prsi===0.0435);
+    // End to end through the app: anchor on P4, log the P3 gross, predict P3.
+    var prevSh=shifts,prevM=manualEntries;
+    shifts=[];manualEntries=[{id:8001,date:'2026-09-25',amount:4137.50}];
+    settings.tax.ytd={date:'2026-09-04',gross:47894.75,tax:10296.07,usc:1113.41,prsi:2002.15,ae:579.33};
+    var pay=ieNetOfPayslip(4137.50,'2026-09-25');
+    t('E1','End to end: anchored on one payslip, the next payslip nett is reproduced',
+      {deds:1249.52,nett:2887.98},{deds:+pay.deduct.toFixed(2),nett:+pay.keep.toFixed(2)},
+      approx(pay.deduct,1249.52,0.06)&&approx(pay.keep,2887.98,0.06));
+    var est=ieEstimate('2026-09-25');
+    t('E2','End to end: year position matches the payslip cumulative figures',
+      {gross:52032.25,tax:11212.58,usc:1210.58},
+      {gross:+est.gross.toFixed(2),tax:+est.tax.toFixed(2),usc:+est.usc.toFixed(2)},
+      approx(est.gross,52032.25,0.01)&&approx(est.tax,11212.58,0.02)&&approx(est.usc,1210.58,0.05));
+    t('E3','Stopping now would release the unused part-year credits and cut off',
+      true,est.refundIfStop>1500&&est.refundIfStop<3500,est.refundIfStop>1500&&est.refundIfStop<3500);
+    shifts=prevSh;manualEntries=prevM;
+    settings=prevS;edition=prevEd;
+    return R;
+  }
+
+
+  // Reconciliation fixtures: real HSE NCHD payslips (SAP payroll, monthly,
+  // Single Scheme, PRSI A1, cumulative basis). Amounts only, no identifying data.
+  function runHsePayslipTests(){
+    var R=[];
+    function t(id,desc,expected,actual,pass){R.push({sc:{id:id,desc:desc},expected:expected,actual:actual,pass:!!pass});}
+    var prevS=JSON.parse(JSON.stringify(settings)),prevEd=edition;
+    edition='hse';settings.periodType='monthly';
+    settings.tax={on:true,srcop:'',credits:'',ae:false,ytd:null};
+    if(!FIXTURES||!FIXTURES.hse)return fixtureSkip('HP0','HSE payslip');
+    var SLIPS=FIXTURES.hse;
+    SLIPS.forEach(function(s){
+      var p=taxPeriodNo(s.date);
+      t(s.id+'a','Pay date maps to month '+s.per,s.per,p.n,p.n===s.per);
+      var hr=s.salary/HSE_WEEK_DIVISOR/HSE_WEEK_HOURS;
+      t(s.id+'b','Hourly rate matches the payslip to 4 decimals',s.hourly,+hr.toFixed(4),approx(hr,s.hourly,0.0001));
+      var asc=hseASC(s.pensionable,12,s.date);
+      t(s.id+'c','ASC bands reproduce the payslip exactly',s.asc,asc,approx(asc,s.asc,0.005));
+      var pen=hsePension(s.pensionable,12,s.date);
+      t(s.id+'d','Single Scheme pension reproduces the payslip exactly',s.pension,pen,approx(pen,s.pension,0.005));
+      var taxable=s.gross-pen-asc;
+      t(s.id+'e','Taxable pay is gross less pension AND ASC',s.taxable,+taxable.toFixed(2),approx(taxable,s.taxable,0.01));
+      var r=ieRates(s.date);
+      t(s.id+'f','PRSI is charged on gross, not on taxable pay',s.prsi,+iePRSI(s.gross,r).toFixed(2),approx(iePRSI(s.gross,r),s.prsi,0.01));
+      var ct=ieCumulativeTax(s.taxableTd,s.date);
+      t(s.id+'g','Cumulative cut off and credits match the payslip',{cutoff:s.cutoffTd,credits:s.credTd},
+        {cutoff:+ct.cutoff.toFixed(2),credits:+ct.credits.toFixed(2)},
+        approx(ct.cutoff,s.cutoffTd,0.005)&&approx(ct.credits,s.credTd,0.005));
+      t(s.id+'h','Cumulative PAYE on taxable pay matches TAX PAID balance',s.taxTd,+ct.tax.toFixed(2),approx(ct.tax,s.taxTd,0.02));
+      var usc=ieCumulativeUSC(s.prsiableTd,s.date);
+      t(s.id+'i','Cumulative USC runs on PRSIable pay, not taxable pay',s.uscTd,+usc.toFixed(2),approx(usc,s.uscTd,0.02));
+    });
+    // Only basic pay is pensionable, which is what makes an extra shift cheap to model.
+    t('HP-NP','Overtime carries no pension and no ASC',{asc:0,pension:0},
+      {asc:hseASC(0,12,'2026-09-30'),pension:hsePension(0,12,'2026-09-30')},
+      hseASC(0,12,'2026-09-30')===0&&hsePension(0,12,'2026-09-30')===0);
+    // The State Pension offset stepped up in February 2026.
+    t('HP-OFF','The pension offset is date keyed, which is what fixes January',
+      {jan:31072.08,sep:31104.00},
+      {jan:hseDeductRates('2026-01-28').pension.offsetAnnual,sep:hseDeductRates('2026-09-30').pension.offsetAnnual},
+      hseDeductRates('2026-01-28').pension.offsetAnnual===31072.08&&hseDeductRates('2026-09-30').pension.offsetAnnual===31104.00);
+
+    // The real test: anchored on August, does the app reproduce September's
+    // actual payslip, salary and extras together?
+    var pS=shifts,pM=manualEntries,pH=settings.hse;
+    edition='hse';settings.periodType='monthly';settings.nextPayslipDate='';
+    var FF=FIXTURES.hseForward,FX=FF.expect;
+    settings.hse={gradeCode:FF.grade,point:FF.point,ed:false,slips:{core:0,ot:0,offsite:0}};
+    shifts=[];manualEntries=[{id:8100,date:'2026-09-15',amount:FF.extras}];
+    settings.tax={on:true,srcop:'',credits:'',ae:false,other:String(FF.parking),ytd:FF.anchor};
+    var posS=taxPosition('2026-09-30');
+    t('HPF1','August anchor plus logged extras rebuilds September cumulative pay',
+      {taxable:FX.taxable,prsiable:FX.prsiable},
+      {taxable:+posS.taxable.toFixed(2),prsiable:+posS.uscable.toFixed(2)},
+      approx(posS.taxable,FX.taxable,0.05)&&approx(posS.uscable,FX.prsiable,0.05));
+    var slip=ieNetOfPayslip(FX.gross,'2026-09-30');
+    t('HPF2','September payslip reproduces: total deductions and nett pay',
+      {deds:FX.deds,nett:FX.nett},{deds:+slip.deduct.toFixed(2),nett:+slip.keep.toFixed(2)},
+      approx(slip.deduct,FX.deds,0.05)&&approx(slip.keep,FX.nett,0.05));
+    var bas=hseBasicForPeriod('2026-09-30',12);
+    t('HPF3','Basic pay for the period comes from the scale point, not the anchor',FX.basic,+bas.toFixed(2),approx(bas,FX.basic,0.01));
+    settings.tax.other='';
+    var slipNoPark=ieNetOfPayslip(FX.gross,'2026-09-30');
+    t('HPF4','Dropping the car parking deduction moves nett by exactly that',FF.parking,
+      +(slipNoPark.keep-slip.keep).toFixed(2),approx(slipNoPark.keep-slip.keep,FF.parking,0.01));
+    shifts=pS;manualEntries=pM;settings.hse=pH;
+
+    // End to end on HSE payroll: anchored on a real September payslip, what an
+    // extra 500 of October overtime is actually worth.
+    var prevSh2=shifts,prevM2=manualEntries;
+    shifts=[];manualEntries=[];
+    edition='hse';settings.periodType='monthly';
+    var FA=FIXTURES.hseAnchor;
+    settings.tax={on:true,srcop:'',credits:'',ae:true,ytd:{date:FA.date,gross:FA.gross,
+      taxableTd:FA.taxableTd,prsiableTd:FA.prsiableTd,cutoffTd:FA.cutoffTd,creditTd:FA.creditTd,
+      tax:FA.tax,usc:FA.usc,prsi:FA.prsi,pensionTd:FA.pensionTd,ascTd:FA.ascTd}};
+    var mg=ieMarginal(500,'2026-10-15');
+    t('HPE1','Extra October overtime loses 40% tax, 8% USC and 4.35% PRSI',
+      {deduct:261.75,keep:238.25},{deduct:+mg.deduct.toFixed(2),keep:+mg.keep.toFixed(2)},
+      approx(mg.deduct,261.75,0.02));
+    t('HPE2','Auto enrolment never applies on HSE payroll, even if the toggle is on',
+      false,taxCfg('2026-10-15').ae,taxCfg('2026-10-15').ae===false);
+    var warnOk=taxAnchorWarnings(taxCfg('2026-10-15'));
+    t('HPE3','A correctly transcribed anchor raises no warnings',0,Object.keys(warnOk).length,Object.keys(warnOk).length===0);
+    settings.tax.ytd.taxableTd=90000;   // taxable above PRSIable: wrong row
+    var warnBad=taxAnchorWarnings(taxCfg('2026-10-15'));
+    t('HPE4','Taxable above PRSIable is flagged as a misread row','Recheck figure',warnBad.taxableTd,warnBad.taxableTd==='Recheck figure');
+    settings.tax.ytd.taxableTd=FA.taxableTd;
+    settings.tax.ytd.cutoffTd=330000.03;   // a stray extra digit
+    var warnBad2=taxAnchorWarnings(taxCfg('2026-10-15'));
+    t('HPE5','A cut off with an extra digit is flagged','Recheck figure',warnBad2.cutoffTd,warnBad2.cutoffTd==='Recheck figure');
+    settings.tax.ytd.cutoffTd=33000.03;
+    settings.tax.ytd.taxableTd=86000;      // above gross less pension and ASC
+    var warnBad3=taxAnchorWarnings(taxCfg('2026-10-15'));
+    t('HPE6','Taxable pay above gross less pension and ASC is flagged','Recheck figure',warnBad3.taxableTd,warnBad3.taxableTd==='Recheck figure');
+    settings.tax.ytd.taxableTd=FA.taxableTd;
+    t('HPE7','A cut off genuinely split between two agencies is NOT flagged',
+      undefined,(function(){settings.tax.ytd.cutoffTd=16500.02;var x=taxAnchorWarnings(taxCfg('2026-10-15')).cutoffTd;settings.tax.ytd.cutoffTd=33000.03;return x;})(),
+      (function(){settings.tax.ytd.cutoffTd=16500.02;var x=taxAnchorWarnings(taxCfg('2026-10-15')).cutoffTd;settings.tax.ytd.cutoffTd=33000.03;return x===undefined;})());
+
+    // The Current Period column instead of Year to Date: the most likely slip.
+    settings.tax.ytd.cutoffTd=3666.67;settings.tax.ytd.creditTd=333.34;
+    var wCol=taxAnchorWarnings(taxCfg('2026-10-15'));
+    t('HPE8','Entering the Current Period column is caught and named',
+      {cutoff:'Use the Year to Date column',credits:'Use the Year to Date column'},
+      {cutoff:wCol.cutoffTd,credits:wCol.creditTd},
+      wCol.cutoffTd==='Use the Year to Date column'&&wCol.creditTd==='Use the Year to Date column');
+    settings.tax.ytd.cutoffTd=33000.03;settings.tax.ytd.creditTd=3000.06;
+    var wOk=taxAnchorWarnings(taxCfg('2026-10-15'));
+    t('HPE9','The correct Year to Date figures raise nothing',undefined,wOk.cutoffTd,wOk.cutoffTd===undefined&&wOk.creditTd===undefined);
+    shifts=prevSh2;manualEntries=prevM2;
+    settings=prevS;edition=prevEd;
+    return R;
+  }
+
+  function loadFixtures(){
+    return fetch('./data/payslip-fixtures.json').then(function(r){return r.ok?r.json():null;})
+      .then(function(j){FIXTURES=j;}).catch(function(){FIXTURES=null;});
+  }
+  var results=scenarios.map(runScenario).concat(runTaxTests());
+  loadFixtures().then(function(){results=results.concat(runPayslipTests());return loadHseData();}).then(function(){
+    results=results.concat(runHseTests()).concat(runHsePayslipTests());
   }).catch(function(e){
     results.push({sc:{id:'H0',desc:'HSE data files load'},expected:'loaded',actual:String(e&&e.message||e),pass:false});
   }).then(function(){

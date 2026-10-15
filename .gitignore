@@ -1,0 +1,6 @@
+
+# Raw payslip and timesheet images (personal data, never commit)
+payslips-private/
+
+# Real payslip figures used by the test suite (colleague data, never commit)
+data/payslip-fixtures.json
