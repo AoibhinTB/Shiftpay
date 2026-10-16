@@ -481,7 +481,7 @@ details[open] summary .chev{transform:rotate(90deg)}
 var DOW_IE=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 var PALETTE=['#2563eb','#7c3aed','#0d9488','#dc2626','#d97706','#0891b2','#059669','#f59e0b'];
 var bands=[],shifts=[],shiftTemplates=[],manualEntries=[];
-var settings={periodType:'weekly',nextPayslipDate:'',periodDefers:{},callTiers:null,tax:null};
+var settings={periodType:'weekly',nextPayslipDate:'',periodDefers:{},callTiers:null,tax:null,whatsNew:null};
 var onboarded=false;
 var openBandId=null,editingShiftId=null,confirmDeleteBandId=null,bandEditSnapshot=null,pendingBackfill=null;
 var openPeriodKeys={},summaryView='list',calMonthOffset=0,totalsRange='month',totalsMonthOffset=0,totalsYearOffset=0,customStart='',customEnd='',historyGroupMode='shifts';
@@ -522,8 +522,13 @@ function loadData(){
     if(s)shifts=JSON.parse(s);
     if(t)shiftTemplates=JSON.parse(t);else loadDefaultTemplates();
     if(m)manualEntries=JSON.parse(m);
-    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};settings.callTiers=ps.callTiers||null;if(settings.callTiers)settings.callTiers.hours=0;settings.hse=ps.hse||null;settings.tax=ps.tax||null;
-      if(settings.hse&&settings.hse.gradeCode&&settings.hse.pointYear==null){settings.hse.pointYear=hsePayYear();localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}}
+    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};settings.callTiers=ps.callTiers||null;if(settings.callTiers)settings.callTiers.hours=0;settings.hse=ps.hse||null;settings.tax=ps.tax||null;settings.whatsNew=ps.whatsNew||null;
+      var dirty=false;
+      if(settings.hse&&settings.hse.gradeCode&&settings.hse.pointYear==null){settings.hse.pointYear=hsePayYear();dirty=true;}
+      // Saved before net pay existed: an existing user. Leave it off and tell
+      // them about it once, rather than changing their numbers unannounced.
+      if(!('tax' in ps)){settings.tax={on:false,srcop:'',credits:'',ae:true,other:'',ytd:null};settings.whatsNew={takeHome:true};dirty=true;}
+      if(dirty)localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}
     else{var oldPP=localStorage.getItem('sp_pp');if(oldPP)settings.periodType=oldPP;}
     onboarded=ob==='1';
     ensureDefaultBands();
@@ -951,6 +956,20 @@ function setHsePoint(p){if(!settings.hse)return;settings.hse.point=parseInt(p)||
 // nothing. Promotion can come from any point, so everyone with a grade sees it,
 // except anyone who set their grade and point after this changeover. The date
 // defaults to changeover and can be moved.
+// One-time card for people who had the app before net pay existed.
+function takeHomeCardDue(){return edTax()&&!!(settings.whatsNew&&settings.whatsNew.takeHome);}
+function takeHomeCardAnswer(on){
+  var t=ensureTax();if(on)t.on=true;
+  if(settings.whatsNew)delete settings.whatsNew.takeHome;
+  persist();renderTaxSetup();syncHpcText();renderSummary();renderTotals();refreshLog();
+  toast(on?'Take home pay is on':'You can turn it on in Setup');
+}
+function takeHomeCardHTML(){
+  var h='<div class="card" style="margin:16px 24px 0"><div style="font-size:14.5px;font-weight:600;margin-bottom:3px">New: take home pay</div>';
+  h+='<div class="tiny" style="margin-bottom:12px">See what lands in your bank each payslip, after '+taxDedList()+'. Add the figures from one payslip in Setup for more accuracy.</div>';
+  h+='<div style="display:flex;gap:8px"><button class="btn-primary" style="flex:1" onclick="takeHomeCardAnswer(true)">Turn it on</button><button class="btn-ghost" style="flex:1" onclick="takeHomeCardAnswer(false)">Not now</button></div>';
+  return h+'</div>';
+}
 function hsePointCardDue(){
   var p=hseProfile();if(!edHSE()||!p||!p.gradeCode||!HSE_SCALES||p.pointYear==null||!hseGrade(p.gradeCode))return false;
   return +p.pointYear<hsePayYear();
@@ -2266,13 +2285,14 @@ function renderSummary(){
   var headline=showNet?hn.keep:nextPay;
   var eps=headline.toFixed(2).split('.'),efmt=eps[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
   var html='';
+  if(takeHomeCardDue())html+=takeHomeCardHTML();
   if(hsePointCardDue())html+=hseChangeoverCardHTML();
   html+='<div class="hero"><div class="hero-lbl">'+(showNet?'Est. Take Home':'Est. Gross')+' &middot; Next Payslip</div>';
   html+='<div class="hero-num">€'+efmt+'<span class="cent">.'+(eps[1]||'00')+'</span></div>';
   if(showNet)html+='<div class="hero-tiny">'+fmtEUR(nextPay)+' gross, less '+fmtEUR(hn.deduct)+' in deductions</div>';
   else html+='<div class="hero-tiny">Pay earned this '+payPeriodLabel()+', plus deferred amounts from previous '+payPeriodLabel()+'s</div>';
   if(settings.nextPayslipDate)html+='<div class="hero-tiny" style="margin-top:4px">Period ends <span class="hero-pill">'+payslipStr+'</span></div>';
-  if(showNet&&!anchored)html+='<div class="hero-tiny" style="margin-top:8px">Rough estimate. Add a payslip in Setup for best accuracy.</div>';
+  if(showNet&&!anchored)html+='<div class="hero-tiny" style="margin-top:8px">Rough estimate. Add a payslip in Setup for more accuracy.</div>';
   if(!taxOn()&&nextPay>0)html+='<div class="hero-tiny" style="margin-top:8px">Turn on net pay in Setup to see your take home.</div>';
   html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">'+(showNet?'Estimate. Verify against your payslip.':'Gross only, before tax, USC, PRSI and pension.')+'</div>';
   html+='</div>';
@@ -3249,7 +3269,7 @@ var onbStep=0;
 var onbSteps=[
   {artType:'mark',title:'Welcome to ShiftPay',body:'Track your gross pay across complex shift patterns. Your data stays on your device. No accounts, no cloud.',cta:'Get started'},
   {artType:'bands',title:'Define your pay bands',body:'Standard, night, weekends, bank holidays: each with its own rate. Add your actual rates from your payslip in Setup.',cta:'Next'},
-  {artType:'log',title:'Log shifts in seconds',body:'Pick a date, set start and end, optionally a break. We split hours across your bands automatically and show the gross before you save.<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.5">Shows your take home for each payslip. Add the figures from one payslip in Setup for best accuracy. Verify against your payslip.</div>',cta:'Start tracking'}
+  {artType:'log',title:'Log shifts in seconds',body:'Pick a date, set start and end, optionally a break. We split hours across your bands automatically and show the gross before you save.<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.5">Shows your take home for each payslip. Add the figures from one payslip in Setup for more accuracy. Verify against your payslip.</div>',cta:'Start tracking'}
 ];
 function renderOnboarding(){
   var step=onbSteps[onbStep];
@@ -3918,6 +3938,23 @@ initSheetSwipe('pay-sheet',closePaySheet);
     var keepTax=settings.tax;settings.tax=null;
     t('X27','Net pay is on by default for new users',true,taxOn(),taxOn()===true);
     settings.tax=keepTax;
+    // Someone updating from the live version: saved settings with no net pay
+    // at all. Net pay stays off and the one-time card is due. Storage is put
+    // back exactly as it was afterwards.
+    var keys28=['bands','shifts','templates','manuals','settings'],saved28={};
+    keys28.forEach(function(k){try{saved28[k]=localStorage.getItem('shiftpay.'+k);}catch(e){}});
+    var prevEd28=edition,mem28={b:bands,t:shiftTemplates,s:shifts,m:manualEntries,ob:onboarded};edition='locum';
+    localStorage.setItem('shiftpay.settings',JSON.stringify({periodType:'weekly',nextPayslipDate:'',periodDefers:{},callTiers:null}));
+    settings.tax=null;settings.whatsNew=null;loadData();
+    var oldUser={on:taxOn(),card:takeHomeCardDue()};
+    localStorage.setItem('shiftpay.settings',JSON.stringify({periodType:'weekly',nextPayslipDate:'',periodDefers:{},callTiers:null,tax:null}));
+    settings.tax=null;settings.whatsNew=null;loadData();
+    var newUser={on:taxOn(),card:takeHomeCardDue()};
+    keys28.forEach(function(k){try{if(saved28[k]===null)localStorage.removeItem('shiftpay.'+k);else localStorage.setItem('shiftpay.'+k,saved28[k]);}catch(e){}});
+    edition=prevEd28;bands=mem28.b;shiftTemplates=mem28.t;shifts=mem28.s;manualEntries=mem28.m;onboarded=mem28.ob;
+    t('X28','Updating from the live version: net pay off and the take home card shown once; new installs on, no card',
+      {oldUser:{on:false,card:true},newUser:{on:true,card:false}},{oldUser:oldUser,newUser:newUser},
+      oldUser.on===false&&oldUser.card===true&&newUser.on===true&&newUser.card===false);
 
     settings=prevS;shifts=prevSh;manualEntries=prevM;edition=prevEd;
     return R;
