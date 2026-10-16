@@ -522,7 +522,8 @@ function loadData(){
     if(s)shifts=JSON.parse(s);
     if(t)shiftTemplates=JSON.parse(t);else loadDefaultTemplates();
     if(m)manualEntries=JSON.parse(m);
-    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};settings.callTiers=ps.callTiers||null;if(settings.callTiers)settings.callTiers.hours=0;settings.hse=ps.hse||null;}
+    if(st){var ps=JSON.parse(st);settings.periodType=ps.periodType||'weekly';settings.nextPayslipDate=ps.nextPayslipDate||'';settings.periodDefers=ps.periodDefers||{};settings.callTiers=ps.callTiers||null;if(settings.callTiers)settings.callTiers.hours=0;settings.hse=ps.hse||null;settings.tax=ps.tax||null;
+      if(settings.hse&&settings.hse.gradeCode&&settings.hse.pointYear==null){settings.hse.pointYear=hsePayYear();localStorage.setItem('shiftpay.settings',JSON.stringify(settings));}}
     else{var oldPP=localStorage.getItem('sp_pp');if(oldPP)settings.periodType=oldPP;}
     onboarded=ob==='1';
     ensureDefaultBands();
@@ -896,8 +897,184 @@ function hseRecomputeAll(){
 
 // ---- HSE edition UI helpers ----
 function hseProfile(){return settings.hse||null;}
-function setHseGrade(code){var g=hseGrade(code);if(!g)return;settings.hse=settings.hse||{point:1,ed:false,hourlyOverride:null};settings.hse.gradeCode=code;if((settings.hse.point||1)>g.points)settings.hse.point=1;settings.hse.hourlyOverride=null;persist();renderBands();refreshLog();}
-function setHsePoint(p){if(!settings.hse)return;settings.hse.point=parseInt(p)||1;settings.hse.hourlyOverride=null;persist();renderBands();refreshLog();}
+// NCHDs move up a point at July changeover, the second Monday in July.
+function changeoverDate(yr){var d=new Date(yr,6,1),add=(8-d.getDay())%7;return dateStr(new Date(yr,6,1+add+7));}
+function lastChangeover(ds){var y=+ds.slice(0,4),c=changeoverDate(y);return c<=ds?c:changeoverDate(y-1);}
+function hsePayYear(){return +lastChangeover(dateStr(new Date())).slice(0,4);}
+// Grade and point history: a dated list, each entry in force from its date
+// until the next. The first has no date (in force before everything else).
+// gradeCode/point on the profile always mirror the latest entry. A shift
+// belongs to the day it starts, so a Sunday night running into changeover
+// Monday stays on the old grade throughout.
+function hseRoles(p){
+  p=p||hseProfile();if(!p)return[];
+  if(!p.roles||!p.roles.length){
+    // Older one-step history, from before the list existed.
+    p.roles=(p.prevPoint&&p.pointFrom)
+      ?[{from:null,gradeCode:p.prevGradeCode||p.gradeCode,point:p.prevPoint},{from:p.pointFrom,gradeCode:p.gradeCode,point:p.point||1}]
+      :[{from:null,gradeCode:p.gradeCode,point:p.point||1}];
+    delete p.prevPoint;delete p.prevGradeCode;delete p.pointFrom;
+  }
+  return p.roles;
+}
+// Sort, merge neighbours that say the same thing, drop history older than the
+// start of last tax year (nothing reaches back further), and mirror the latest.
+function hseRolesTidy(p){
+  var r=hseRoles(p).slice().sort(function(x,y){return(x.from||'')<(y.from||'')?-1:(x.from||'')>(y.from||'')?1:0;});
+  r[0].from=null;
+  var floor=(new Date().getFullYear()-1)+'-01-01';
+  while(r.length>1&&r[1].from<=floor){r.shift();r[0].from=null;}
+  var out=[r[0]];
+  for(var i=1;i<r.length;i++){var l=out[out.length-1];if(r[i].gradeCode===l.gradeCode&&r[i].point===l.point)continue;out.push(r[i]);}
+  p.roles=out;
+  var last=out[out.length-1];p.gradeCode=last.gradeCode;p.point=last.point;
+}
+// From this date on, this role: anything recorded after it is superseded.
+function hseRoleFrom(p,from,gradeCode,point){
+  var r=hseRoles(p).filter(function(x){return !x.from||x.from<from;});
+  r.push({from:from,gradeCode:gradeCode,point:point});
+  p.roles=r;hseRolesTidy(p);p.hourlyOverride=null;
+}
+function hseRoleAlways(p,gradeCode,point){p.roles=[{from:null,gradeCode:gradeCode,point:point}];hseRolesTidy(p);p.hourlyOverride=null;}
+function hseConfirmPoint(h){hseRoleAlways(h,h.gradeCode,h.point||1);h.pointYear=hsePayYear();}
+// The grade and point in force on a date.
+function hseRoleOn(ds){
+  var p=hseProfile();if(!p)return{gradeCode:null,point:1};
+  var r=hseRoles(p),cur=r[0];
+  for(var i=1;i<r.length;i++)if(r[i].from<=ds)cur=r[i];
+  return{gradeCode:cur.gradeCode,point:cur.point||1};
+}
+function hsePointOn(ds){return hseRoleOn(ds).point;}
+function setHseGrade(code){var g=hseGrade(code);if(!g)return;settings.hse=settings.hse||{point:1,ed:false,hourlyOverride:null};settings.hse.gradeCode=code;if((settings.hse.point||1)>g.points)settings.hse.point=1;settings.hse.hourlyOverride=null;hseConfirmPoint(settings.hse);persist();renderBands();refreshLog();}
+function setHsePoint(p){if(!settings.hse)return;settings.hse.point=parseInt(p)||1;settings.hse.hourlyOverride=null;hseConfirmPoint(settings.hse);persist();renderBands();refreshLog();}
+// Once a year, from changeover, ask what changed: a point up, a new grade, or
+// nothing. Promotion can come from any point, so everyone with a grade sees it,
+// except anyone who set their grade and point after this changeover. The date
+// defaults to changeover and can be moved.
+function hsePointCardDue(){
+  var p=hseProfile();if(!edHSE()||!p||!p.gradeCode||!HSE_SCALES||p.pointYear==null||!hseGrade(p.gradeCode))return false;
+  return +p.pointYear<hsePayYear();
+}
+var hseCardGradeOpen=false,hseCardPick=null,hseCardDate=null;
+function hseCardFrom(){var d=hseCardDate||lastChangeover(dateStr(new Date()));return /^\d{4}-\d{2}-\d{2}$/.test(d)?d:lastChangeover(dateStr(new Date()));}
+function hseCardSetDate(v){hseCardDate=v;}
+function hseCardDone(msg){
+  var p=hseProfile();p.pointYear=hsePayYear();hseCardGradeOpen=false;hseCardDate=null;
+  hseRestampShifts(false);persist();renderSummary();renderBands();refreshLog();toast(msg);
+}
+function hseCardStep(up){
+  var p=hseProfile();if(!p)return;
+  if(up)hseRoleFrom(p,hseCardFrom(),p.gradeCode,(p.point||1)+1);
+  hseCardDone(up?'Now on point '+p.point+' from '+fmtRangeDate(hseCardFrom()):'No change this year');
+}
+function hseCardOpenGrade(){hseCardGradeOpen=true;hseCardPick={gradeCode:'',point:1};renderSummary();}
+function hseCardSetPick(k,v){hseCardPick[k]=k==='point'?(parseInt(v)||1):v;if(k==='gradeCode')hseCardPick.point=1;renderSummary();}
+function hseCardSaveGrade(){
+  var p=hseProfile(),g=hseCardPick&&hseGrade(hseCardPick.gradeCode);if(!p||!g)return;
+  var from=hseCardFrom();
+  hseRoleFrom(p,from,hseCardPick.gradeCode,Math.min(hseCardPick.point,g.points));
+  hseCardDone('Now '+g.grade+', point '+p.point+' from '+fmtRangeDate(from));
+}
+function hseChangeoverCardHTML(){
+  var p=hseProfile(),g=hseGrade(p.gradeCode),pc=p.point||1,top=pc>=g.points;
+  var h='<div class="card" style="margin:16px 24px 0"><div style="font-size:14.5px;font-weight:600;margin-bottom:3px">July changeover</div>';
+  var dateRow='<div class="field" style="margin-bottom:12px"><label class="lbl">From</label><input type="date" value="'+esc(hseCardFrom())+'" onchange="hseCardSetDate(this.value)"></div>';
+  if(hseCardGradeOpen){
+    var pick=hseCardPick||{gradeCode:'',point:1},pg=pick.gradeCode?hseGrade(pick.gradeCode):null;
+    h+='<div class="tiny" style="margin-bottom:10px">Your new grade and point.</div>';
+    h+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">New grade</label><select onchange="hseCardSetPick(\'gradeCode\',this.value)"><option value=""'+(pick.gradeCode?'':' selected')+' disabled>Choose</option>';
+    HSE_SCALES.grades.forEach(function(x){if(x.grade_code!==p.gradeCode)h+='<option value="'+x.grade_code+'"'+(pick.gradeCode===x.grade_code?' selected':'')+'>'+esc(x.grade)+'</option>';});
+    h+='</select></div><div class="field"><label class="lbl">Point</label><select onchange="hseCardSetPick(\'point\',this.value)"'+(pg?'':' disabled')+'>';
+    for(var i=1;i<=(pg?pg.points:1);i++)h+='<option value="'+i+'"'+(pick.point===i?' selected':'')+'>'+i+'</option>';
+    h+='</select></div></div>'+dateRow;
+    h+='<div style="display:flex;gap:8px"><button class="btn-primary" style="flex:1'+(pg?'':';opacity:.45;cursor:default')+'"'+(pg?'':' disabled')+' onclick="hseCardSaveGrade()">Save</button><button class="btn-ghost" style="flex:1" onclick="hseCardGradeOpen=false;renderSummary()">Back</button></div>';
+  }else{
+    h+='<div class="tiny" style="margin-bottom:10px">'+(top?'You are on the top point for '+esc(g.grade)+'. Did you change grade?':'Did you move up a point on your pay scale?')+'</div>';
+    if(!top)h+=dateRow;
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    if(!top)h+='<button class="btn-primary" style="flex:1" onclick="hseCardStep(true)">Yes, point '+(pc+1)+'</button>';
+    h+='<button class="'+(top?'btn-primary':'btn-ghost')+'" style="flex:1" onclick="hseCardOpenGrade()">New grade</button>';
+    h+='<button class="btn-ghost" style="flex:1" onclick="hseCardStep(false)">No change</button></div>';
+  }
+  return h+'</div>';
+}
+// Changing grade or point in Setup asks when it took effect: always (every
+// past and future shift), from today, or from a chosen date onwards. Nothing
+// changes until the user picks.
+var hseRolePending=null;
+function hseStageRole(k,v){
+  var p=hseProfile();
+  if(!p||!p.gradeCode){if(k==='gradeCode')setHseGrade(v);return;}
+  var was=hseRolePending,cur={gradeCode:was?was.gradeCode:p.gradeCode,point:was?was.point:(p.point||1)};
+  if(k==='gradeCode'){cur.gradeCode=v;var g=hseGrade(v);if(!g)return;if(cur.point>g.points)cur.point=1;}
+  else cur.point=parseInt(v)||1;
+  if(cur.gradeCode===p.gradeCode&&cur.point===(p.point||1))hseRolePending=null;
+  else{cur.mode=was?was.mode:'';cur.date=was?was.date:dateStr(new Date());hseRolePending=cur;}
+  renderBands();
+}
+function hseRoleMode(m){if(!hseRolePending)return;hseRolePending.mode=m;renderBands();}
+function hseRoleDate(v){if(hseRolePending)hseRolePending.date=v;}
+function hseRoleCancel(){hseRolePending=null;renderBands();}
+function hseRoleApply(){
+  var pd=hseRolePending,p=hseProfile();if(!pd||!p||!pd.mode)return;
+  var from=pd.mode==='all'?null:(pd.mode==='today'?dateStr(new Date()):pd.date);
+  if(pd.mode==='date'&&!/^\d{4}-\d{2}-\d{2}$/.test(from||'')){toast('Pick a date');return;}
+  if(from){hseRoleFrom(p,from,pd.gradeCode,pd.point);p.pointYear=hsePayYear();}
+  else{hseRoleAlways(p,pd.gradeCode,pd.point);p.pointYear=hsePayYear();}
+  hseRestampShifts(!from);
+  hseRolePending=null;
+  persist();renderBands();refreshLog();renderSummary();renderTotals();
+  var g=hseGrade(p.gradeCode);
+  toast(g.grade+', point '+p.point+(from?' from '+fmtRangeDate(from):' for all shifts'));
+}
+// Editing the history list in Setup: move a date, or remove a change.
+function hseRoleEditDate(i,v){
+  var p=hseProfile(),r=hseRoles(p);if(!r[i]||!i||!/^\d{4}-\d{2}-\d{2}$/.test(v||''))return;
+  r[i].from=v;hseRolesTidy(p);hseRestampShifts(false);persist();renderBands();refreshLog();renderSummary();renderTotals();
+}
+function hseRoleRemove(i){
+  var p=hseProfile(),r=hseRoles(p);if(!r[i]||!i)return;
+  r.splice(i,1);hseRolesTidy(p);hseRestampShifts(false);persist();renderBands();refreshLog();renderSummary();renderTotals();
+}
+// Reprice logged shifts at the role in force on each shift's own date. With
+// all=false only shifts whose recorded grade or point no longer match are
+// touched, so a rate typed in by hand on an unaffected shift survives.
+function hseRestampShifts(all){
+  shifts.forEach(function(s){
+    if(!s.hse||!s.hse.gradeCode)return;
+    var r=hseRoleOn(s.date);
+    if(!all&&s.hse.gradeCode===r.gradeCode&&(s.hse.point||1)===r.point)return;
+    var inf=hseHourly(r.gradeCode,r.point,s.date);if(!inf)return;
+    s.hse.gradeCode=r.gradeCode;s.hse.point=r.point;s.hse.hourly=inf.hourly;s.hse.annual=inf.annual;
+    s.hse.scaleEdition=inf.scaleEdition;s.hse.hse_scale_edition=inf.scaleEdition;
+  });
+  if(HSE_SCALES)hseRecomputeAll();
+}
+function hseRolesListHTML(){
+  var p=hseProfile(),r=hseRoles(p);if(r.length<2)return'';
+  var h='<div style="margin:2px 0 12px"><div class="lbl" style="margin-bottom:6px">Grade history</div>';
+  r.forEach(function(x,i){
+    var g=hseGrade(x.gradeCode),name=(g?g.grade:x.gradeCode)+', point '+x.point;
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line-soft)">';
+    if(!i)h+='<div class="tiny" style="width:128px;flex-shrink:0">Before '+esc(fmtRangeDate(r[1].from))+'</div>';
+    else h+='<input type="date" value="'+esc(x.from)+'" onchange="hseRoleEditDate('+i+',this.value)" style="width:128px;flex-shrink:0;padding:6px 8px;font-size:13px">';
+    h+='<div style="flex:1;font-size:13px">'+esc(name)+'</div>';
+    if(i)h+='<button class="btn-ghost" style="padding:4px 8px" aria-label="Remove this change" onclick="hseRoleRemove('+i+')">×</button>';
+    h+='</div>';
+  });
+  return h+'</div>';
+}
+function hseRoleCardHTML(){
+  var pd=hseRolePending,g=hseGrade(pd.gradeCode);
+  var opt=function(m,lbl){return '<button class="'+(pd.mode===m?'on':'')+'" onclick="hseRoleMode(\''+m+'\')">'+lbl+'</button>';};
+  var h='<div style="margin:4px 0 12px;padding:12px;border:1px solid var(--line);border-radius:var(--r)">';
+  h+='<div style="font-size:14px;font-weight:600;margin-bottom:3px">Apply '+esc(g.grade)+', point '+pd.point+' to</div>';
+  h+='<div class="tiny" style="margin-bottom:10px">Your salary changes from the same date.</div>';
+  h+='<div class="seg" style="margin-bottom:10px">'+opt('all','All my shifts')+opt('today','From today')+opt('date','From a date')+'</div>';
+  if(pd.mode==='date')h+='<div class="field" style="margin-bottom:10px"><input type="date" value="'+esc(pd.date||'')+'" onchange="hseRoleDate(this.value)"></div>';
+  h+='<div style="display:flex;gap:8px"><button class="btn-primary" style="flex:1'+(pd.mode?'':';opacity:.45;cursor:default')+'"'+(pd.mode?'':' disabled')+' onclick="hseRoleApply()">Apply</button><button class="btn-ghost" style="flex:1" onclick="hseRoleCancel()">Cancel</button></div>';
+  return h+'</div>';
+}
 function setHseEd(on){settings.hse=settings.hse||{point:1,hourlyOverride:null};settings.hse.ed=!!on;persist();refreshLog();}
 function setHseOverride(v){if(!settings.hse)return;var f=parseFloat(v);var auto=null;try{auto=+hseHourly(settings.hse.gradeCode,settings.hse.point||1,dateStr(new Date())).hourly.toFixed(2);}catch(e){}
   settings.hse.hourlyOverride=(isNaN(f)||f<=0||f===auto)?null:f;persist();renderBands();refreshLog();}
@@ -908,19 +1085,22 @@ function hseEditionLabel(d){if(!d)return'';var p=d.split('-');return new Date(+p
 function hseDisclaimerShort(ed){return'Estimate: HSE scale '+hseEditionLabel(ed||'2026-06-01')+', NCHD Contract 2010 (July 2020). Check against your payslip.';}
 function hseSetupHTML(){
   if(!HSE_SCALES)return'<div class="tiny" style="padding:12px 0">Loading HSE pay scales…</div>';
-  var p=hseProfile()||{};
+  var p0=hseProfile()||{},pd=hseRolePending;
+  // While a change is waiting for its date, show the new choice in the selects.
+  var p=pd?{gradeCode:pd.gradeCode,point:pd.point,hourlyOverride:null,ed:p0.ed}:p0;
   var html='<div class="band-card"><div style="padding:13px 16px">';
-  html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Grade</label><select onchange="setHseGrade(this.value)"><option value=""'+(p.gradeCode?'':' selected')+' disabled>Choose your grade</option>';
+  html+='<div class="field" style="margin-bottom:10px"><label class="lbl">Grade</label><select onchange="hseStageRole(\'gradeCode\',this.value)"><option value=""'+(p.gradeCode?'':' selected')+' disabled>Choose your grade</option>';
   HSE_SCALES.grades.forEach(function(g){html+='<option value="'+g.grade_code+'"'+(p.gradeCode===g.grade_code?' selected':'')+'>'+esc(g.grade)+'</option>';});
   html+='</select></div>';
   if(p.gradeCode&&hseGrade(p.gradeCode)){
     var g=hseGrade(p.gradeCode),info=hseHourly(p.gradeCode,p.point||1,dateStr(new Date()));
-    html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Point</label><select onchange="setHsePoint(this.value)">';
+    html+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">Point</label><select onchange="hseStageRole(\'point\',this.value)">';
     for(var i=1;i<=g.points;i++)html+='<option value="'+i+'"'+((p.point||1)===i?' selected':'')+'>'+i+'</option>';
     html+='</select></div>';
     var shown=p.hourlyOverride!=null?p.hourlyOverride:+info.hourly.toFixed(2);
     html+='<div class="field"><label class="lbl">Hourly rate</label><div style="position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--muted)">€</span><input type="number" step="0.01" min="0" value="'+shown+'" style="padding-left:26px" onchange="setHseOverride(this.value)"></div></div></div>';
     if(p.hourlyOverride!=null)html+='<div class="tiny" style="margin-bottom:10px">You have overridden the scale rate; new shifts use your figure.</div>';
+    if(pd)html+=hseRoleCardHTML();else html+=hseRolesListHTML();
     html+='<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:2px 0"><input type="checkbox" '+(p.ed?'checked':'')+' onchange="setHseEd(this.checked)" style="accent-color:var(--blue)"><span style="font-size:13px">Shift work</span></label>';
   }
   html+='</div></div>';
@@ -983,9 +1163,9 @@ function closePaySheet(){
 }
 function hseDraftFromLog(date,start,end,breakMin,breakStart){
   var p=hseProfile();
-  var info=p&&p.gradeCode?hseHourly(p.gradeCode,p.point||1,date):null;
+  var role=hseRoleOn(date),info=p&&p.gradeCode?hseHourly(role.gradeCode,role.point,date):null;
   var hourly=p&&p.hourlyOverride!=null?p.hourlyOverride:(info?info.hourly:0);
-  var d={id:-1,date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:logEndsNextDay,bh:false,bhDates:[],hse:{ed:!!(p&&p.ed),nightCore:!!(logNightCore&&!logOffsite),slips:hseSlips(),rosteredUntil:(function(){if(!logUnrostered)return undefined;var ruEl=document.getElementById('l-ru');var v=ruEl?ruEl.value:'';return validTime(v)?v:undefined;})(),hourly:hourly,gradeCode:p?p.gradeCode:null,point:p?(p.point||1):null,annual:info?info.annual:null,scaleEdition:info?info.scaleEdition:null,hse_scale_edition:info?info.scaleEdition:null}};
+  var d={id:-1,date:date,start:start,end:end,breakMin:0,breakStart:'',endsNextDay:logEndsNextDay,bh:false,bhDates:[],hse:{ed:!!(p&&p.ed),nightCore:!!(logNightCore&&!logOffsite),slips:hseSlips(),rosteredUntil:(function(){if(!logUnrostered)return undefined;var ruEl=document.getElementById('l-ru');var v=ruEl?ruEl.value:'';return validTime(v)?v:undefined;})(),hourly:hourly,gradeCode:p?role.gradeCode:null,point:p?role.point:null,annual:info?info.annual:null,scaleEdition:info?info.scaleEdition:null,hse_scale_edition:info?info.scaleEdition:null}};
   if(logOffsite){
     var eff=logEffCallIns(start);
     if(eff.err)return{err:eff.err};
@@ -1229,12 +1409,32 @@ function ensureTax(){
   return settings.tax;
 }
 function taxOn(){return edTax()&&!!(settings.tax&&settings.tax.on);}
-function hseBasicForPeriod(ds,of){
-  var p=hseProfile();
-  if(!p||!p.gradeCode||!HSE_SCALES)return 0;
-  var inf=hseHourly(p.gradeCode,p.point||1,ds);
-  return inf?inf.annual/of:0;
+// A date safely inside tax period n, for pricing salary in that period.
+function periodMidDate(yr,n){
+  var of=taxPeriodNo(yr+'-06-15').of;
+  if(of===12)return dateStr(new Date(yr,n-1,15));
+  var d=new Date(yr,0,1);d.setDate(d.getDate()+(n-1)*(of===26?14:7)+3);return dateStr(d);
 }
+// Basic salary paid in tax period n. Scales are date keyed, and a month that
+// straddles changeover is split by day between the old and new point, which is
+// how payroll settles it once the arrears come through.
+function hseBasicInPeriod(yr,n){
+  var p=hseProfile();if(!p||!p.gradeCode||!HSE_SCALES)return 0;
+  var of=taxPeriodNo(yr+'-06-15').of,mid=periodMidDate(yr,n);
+  var at=function(r){var inf=hseHourly(r.gradeCode,r.point,mid);return inf?inf.annual/of:0;};
+  if(of!==12)return at(hseRoleOn(mid));
+  var first=dateStr(new Date(yr,n-1,1)),lastD=new Date(yr,n,0),last=dateStr(lastD),days=lastD.getDate();
+  var starts=[1];
+  hseRoles(p).forEach(function(x){if(x.from&&x.from>first&&x.from<=last){var d=parseInt(x.from.slice(8),10);if(starts.indexOf(d)<0)starts.push(d);}});
+  starts.sort(function(x,y){return x-y;});
+  var tot=0;
+  for(var i=0;i<starts.length;i++){
+    var d1=(i+1<starts.length)?starts[i+1]:days+1;
+    tot+=at(hseRoleOn(first.slice(0,8)+(starts[i]<10?'0':'')+starts[i]))*(d1-starts[i])/days;
+  }
+  return tot;
+}
+function hseBasicForPeriod(ds,of){return hseBasicInPeriod(+ds.slice(0,4),taxPeriodNo(ds).n);}
 function hseBasicDeductions(ds,of){
   var basic=hseBasicForPeriod(ds,of);
   return {basic:basic,pension:hsePension(basic,of,ds),asc:hseASC(basic,of,ds)};
@@ -1463,7 +1663,9 @@ function grossByPeriod(fromDS,toDS){
 // Your cumulative position only moves when a payslip runs, so the period that
 // matters is the one your last payslip fell in, not today's.
 function latestPayDate(pos,ds){
-  var best=pos.anchored?pos.anchorDate:null;
+  // Salary pays every period, so on HSE payroll the latest payslip is this one.
+  if(edHSE()&&hseBasicForPeriod(ds)>0)return ds;
+  var best=pos.anchorN>0?pos.anchorDate:null;
   for(var pk in pos.since){var d=pos.since[pk].ds;if(!best||d>best)best=d;}
   return best||ds;
 }
@@ -1471,29 +1673,40 @@ function sumPeriods(m){var t=0;for(var k in m)t+=m[k].gross;return t;}
 // A payslip anchor beats reconstructed history: its year to date figures already
 // contain the gaps, any Week 1 spell, emergency tax, and anything earned before
 // the app was installed. Without one, fall back to what has been logged.
+// The anchor is entered once and never needs updating: everything after it is
+// rebuilt from salary and logged shifts. An anchor from an earlier tax year
+// still says who this is (credits, cut off) but its totals belonged to that
+// year, and cumulative pay restarts at zero on 1 January.
 function taxPosition(ds){
-  var c=taxCfg(ds),yr=ds.slice(0,4),a=c.ytd;
-  if(a&&String(a.date).slice(0,4)===yr&&a.date<=ds){
-    var since=grossByPeriod(nextDayStr(a.date),yr+'-12-31'),add=sumPeriods(since);
-    var g=(parseFloat(a.gross)||0)+add;
-    // HSE payroll charges tax and USC on two different bases, both printed on
-    // the payslip. Agency payroll uses the same number for all three. Anything
-    // logged since the anchor is overtime, which is fully taxable and USCable.
-    var tx=g,us=g;
-    if(edHSE()){
-      // Basic salary accrues every period whether or not anything is logged.
-      var pp=taxPeriodNo(ds),nS=Math.max(0,pp.n-taxPeriodNo(a.date).n);
-      var bd=hseBasicDeductions(ds,pp.of);
-      g+=nS*bd.basic;
-      tx=(parseFloat(a.taxableTd)||0)+add+nS*(bd.basic-bd.pension-bd.asc);
-      us=(parseFloat(a.prsiableTd)||0)+add+nS*bd.basic;
-    }
-    return {gross:g,taxable:tx,uscable:us,since:since,anchored:true,anchorDate:a.date,
-      paid:{tax:parseFloat(a.tax)||0,usc:parseFloat(a.usc)||0,prsi:parseFloat(a.prsi)||0,ae:parseFloat(a.ae)||0,
-            pension:parseFloat(a.pensionTd)||0,asc:parseFloat(a.ascTd)||0}};
+  var c=taxCfg(ds),yr=ds.slice(0,4),a=c.ytd,pp=taxPeriodNo(ds);
+  var useA=!!(a&&a.date<=ds),same=useA&&String(a.date).slice(0,4)===yr;
+  var an=same?taxPeriodNo(a.date).n:0;
+  var since=grossByPeriod(same?nextDayStr(a.date):yr+'-01-01',yr+'-12-31'),add=sumPeriods(since);
+  var A=function(k){return same?(parseFloat(a[k])||0):0;};
+  var g=A('gross')+add;
+  // HSE payroll charges tax and USC on two different bases, both printed on
+  // the payslip. Agency payroll uses the same number for all three. Anything
+  // logged since the anchor is overtime, which is fully taxable and USCable.
+  var tx=g,us=g;
+  if(edHSE()){
+    // Basic salary accrues every period whether or not anything is logged,
+    // priced period by period so a June pay rise or a July step up lands right.
+    var b=0,bt=0;
+    for(var k=an+1;k<=pp.n;k++){var bd=hseBasicDeductions(periodMidDate(+yr,k),pp.of);b+=bd.basic;bt+=bd.basic-bd.pension-bd.asc;}
+    g+=b;tx=A('taxableTd')+add+bt;us=A('prsiableTd')+add+b;
   }
-  var all=grossByPeriod(yr+'-01-01',yr+'-12-31'),g2=sumPeriods(all);
-  return {gross:g2,taxable:g2,uscable:g2,since:all,anchored:false,anchorDate:null,paid:null};
+  return {gross:g,taxable:tx,uscable:us,since:since,anchored:useA,anchorDate:useA?a.date:null,anchorN:an,
+    paid:useA?{tax:A('tax'),usc:A('usc'),prsi:A('prsi'),ae:A('ae'),pension:A('pensionTd'),asc:A('ascTd')}:null};
+}
+// The tax period of the last payslip before period n. Credits and cut off
+// accrue for every period in between, so this must be the real previous
+// payslip, not the anchor: an anchor a month old would otherwise cost a whole
+// month of credits and overstate take home by over a thousand euro.
+function lastPaidN(pos,n){
+  var last=pos.anchorN||0;
+  if(edHSE()&&hseProfile()&&hseProfile().gradeCode)return Math.max(last,n-1);
+  for(var pk in pos.since){var sn=taxPeriodNo(pos.since[pk].ds).n;if(sn<n&&sn>last)last=sn;}
+  return last;
 }
 // Year-end liability on everything earned so far. This is the robust figure: it
 // does not depend on in-year timing, tax basis, or how lumpy the work was.
@@ -1507,28 +1720,39 @@ function ieEstimate(ds){
            period:taxPeriodNo(asAt)};
   var stopTax=ieIncomeTax(pos.taxable,c.srcop,c.credits),stopUsc=ieUSC(pos.uscable,c.r);
   var prsi=pos.anchored?pos.paid.prsi:0,ae=pos.anchored?pos.paid.ae:0;
-  for(var pk in pos.since){
-    prsi+=iePRSI(pos.since[pk].gross,ieRates(pos.since[pk].ds));
-    ae+=ieAEPeriod(pos.since[pk].gross,c);
-  }
   var pen=0,asc=0;
-  if(edHSE()){
+  if(edHSE()&&hseBasicForPeriod(asAt)>0){
+    // PRSI is charged on each period's whole pay, salary included.
     pen=pos.anchored?pos.paid.pension:0;asc=pos.anchored?pos.paid.asc:0;
-    var pr=hseProfile(),inf=(pr&&pr.gradeCode&&HSE_SCALES)?hseHourly(pr.gradeCode,pr.point||1,asAt):null;
-    var nSince=cum.period.n-(pos.anchored?taxPeriodNo(pos.anchorDate).n:0);
-    if(inf&&nSince>0){
-      var basicPer=inf.annual/cum.period.of;
-      pen+=hsePension(basicPer,cum.period.of,asAt)*nSince;
-      asc+=hseASC(basicPer,cum.period.of,asAt)*nSince;
+    var yr=+asAt.slice(0,4),xp={};
+    for(var pk in pos.since){var sn=taxPeriodNo(pos.since[pk].ds).n;xp[sn]=(xp[sn]||0)+pos.since[pk].gross;}
+    for(var k=(pos.anchorN||0)+1;k<=cum.period.n;k++){
+      var md=periodMidDate(yr,k),bd=hseBasicDeductions(md,cum.period.of);
+      prsi+=iePRSI(bd.basic+(xp[k]||0),ieRates(md));
+      pen+=bd.pension;asc+=bd.asc;
+    }
+  }else{
+    for(var pk2 in pos.since){
+      prsi+=iePRSI(pos.since[pk2].gross,ieRates(pos.since[pk2].ds));
+      ae+=ieAEPeriod(pos.since[pk2].gross,c);
     }
   }
   var total=cum.tax+cum.usc+prsi+ae+pen+asc,stopTotal=stopTax+stopUsc+prsi+ae+pen+asc;
   var other=taxOther()*cum.period.n;
   var paidTotal=pos.anchored?(pos.paid.tax+pos.paid.usc+pos.paid.prsi+pos.paid.ae+pos.paid.pension+pos.paid.asc):null;
+  // Drift catches a mistyped anchor: rerun the anchor payslip's own tax and USC
+  // and compare with what it says was paid. Comparing with today would flag
+  // every payslip since, now that the anchor is never updated.
+  var drift=null,ya=c.ytd;
+  if(pos.anchorN>0&&ya&&(String(ya.tax)!==''||String(ya.usc)!=='')){
+    var gb=parseFloat(ya.gross),tb=parseFloat(ya.taxableTd),ub=parseFloat(ya.prsiableTd);
+    if(isNaN(tb))tb=gb;if(isNaN(ub))ub=gb;
+    if(!isNaN(tb)&&!isNaN(ub))drift=(pos.paid.tax+pos.paid.usc)-(ieCumulativeTax(tb,ya.date).tax+ieCumulativeUSC(ub,ya.date));
+  }
   return {gross:g,tax:cum.tax,usc:cum.usc,prsi:prsi,ae:ae,pension:pen,asc:asc,total:total,other:other,net:g-total-other,
     period:cum.period,asAt:asAt,stopTotal:stopTotal,refundIfStop:total-stopTotal,
     anchored:pos.anchored,anchorDate:pos.anchorDate,paidTotal:paidTotal,
-    drift:(paidTotal===null)?null:(paidTotal-total),rates:c.r,srcop:c.srcop,credits:c.credits};
+    drift:drift,rates:c.r,srcop:c.srcop,credits:c.credits};
 }
 // Deduction on a slice of pay sitting on top of cumulative position g0. Income
 // tax, USC and auto enrolment are cumulative, so they come out of the difference.
@@ -1567,8 +1791,8 @@ function ieNetOfPayslip(amount,ds){
   var g1=Math.max(pos.taxable,addTax),g0=g1-addTax,prevN=Math.max(0,p.n-1);
   var u1=Math.max(pos.uscable,addUsc),u0=u1-addUsc;
   if(pos.anchored){
-    var an=taxPeriodNo(pos.anchorDate).n;
-    if(an<p.n)prevN=an;
+    var ln=lastPaidN(pos,p.n);
+    if(ln<p.n)prevN=ln;
   }
   var d=ieCumulativeTax(g1,ds,p.n).tax-ieCumulativeTax(g0,ds,prevN).tax;
   d+=ieCumulativeUSC(u1,ds,p.n)-ieCumulativeUSC(u0,ds,prevN);
@@ -1576,14 +1800,21 @@ function ieNetOfPayslip(amount,ds){
   d=Math.max(0,Math.min(amount,d));
   return {deduct:d,keep:amount-d,rate:d/amount};
 }
+function taxDedList(){return edHSE()?'income tax, USC, PRSI, pension and ASC':'income tax, USC, PRSI and auto enrolment';}
 function syncHpcText(){
   var el=document.getElementById('hpc-gross');if(!el)return;
-  el.textContent=taxOn()?'Net figures estimate income tax, USC, PRSI and auto enrolment from the settings above. They are estimates, not tax advice.':'Shows gross pay only. Tax, USC, PRSI and pension are not deducted.';
+  el.textContent=taxOn()?'Net figures estimate '+taxDedList()+' from the settings above. They are estimates, not tax advice.':'Shows gross pay only. Tax, USC, PRSI and pension are not deducted.';
 }
 function setTaxOn(){var t=ensureTax();t.on=!t.on;persist();renderTaxSetup();syncHpcText();renderSummary();renderTotals();refreshLog();}
 function setTaxAE(){var t=ensureTax();t.ae=!(t.ae!==false);persist();renderTaxSetup();renderSummary();renderTotals();refreshLog();}
 function setTaxField(k,v){var t=ensureTax();t[k]=v;persist();renderSummary();renderTotals();refreshLog();}
-function setTaxYtd(k,v){var t=ensureTax();t.ytd[k]=v;persist();renderSummary();renderTotals();refreshLog();}
+function setTaxYtd(k,v){var t=ensureTax();t.ytd[k]=v;persist();if(k==='date')syncAnchorState();renderSummary();renderTotals();refreshLog();}
+// Updated in place: a full re-render would collapse the anchor section and drop focus mid entry.
+function syncAnchorState(){
+  var set=!!taxCfg().ytd,st=document.getElementById('tax-anchor-state'),w=document.getElementById('tax-anchor-warn');
+  if(st){st.textContent=' · '+(set?'set':'needed');st.style.color=set?'var(--muted)':'var(--warn)';}
+  if(w)w.style.display=set?'none':'';
+}
 function clearTaxAnchor(){var t=ensureTax();t.ytd=null;ensureTax();persist();renderTaxSetup();renderSummary();renderTotals();refreshLog();}
 function taxNumField(lbl,key,val,warn){
   var info=TAX_INFO[key];
@@ -1623,14 +1854,14 @@ function renderTaxSetup(){
   box.style.display='';hdr.style.display='';
   var t=ensureTax(),c=taxCfg(),on=!!t.on,a=t.ytd,r=c.r;
   var h='<div class="card" style="display:flex;flex-direction:column;gap:14px">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:14px"><div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Estimate net pay</div><div class="tiny">Shows what you keep after income tax, USC, PRSI and auto enrolment.</div></div><button class="toggle'+(on?' on':'')+'" onclick="setTaxOn()"></button></div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:14px"><div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Estimate net pay</div><div class="tiny">Shows what you keep after '+taxDedList()+'.</div></div><button class="toggle'+(on?' on':'')+'" onclick="setTaxOn()"></button></div>';
   if(on){
-    if(!c.ytd)h+='<div class="tiny" style="color:var(--warn);line-height:1.6">Fill in the payslip anchor below. Without it the estimate counts only the shifts logged in this app, so it will overstate what you keep.</div>';
+    if(!c.ytd)h+='<div class="tiny" id="tax-anchor-warn" style="color:var(--warn);line-height:1.6">Fill in the payslip anchor below. Without it the estimate counts only the shifts logged in this app, so it will overstate what you keep.</div>';
     // The anchor comes first because it is the one thing with no sensible
     // default: it is what tells the calculation where you are in the tax year.
     h+='<div class="field"><label class="lbl">Other deductions each payslip<button type="button" class="info-dot" onclick="showInfo(event,this,\'other\')">?</button></label><input type="number" inputmode="decimal" step="0.01" value="'+esc(t.other==null?'':t.other)+'" placeholder="0.00" onchange="setTaxField(\'other\',this.value)"></div>';
-    h+='<details'+(c.ytd?'':' open')+'><summary style="font-size:14px;font-weight:600;padding:9px 0;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line-soft)"><span>Payslip anchor<span style="font-weight:500;color:'+(c.ytd?'var(--muted)':'var(--warn)')+'"> · '+(c.ytd?'set':'needed')+'</span></span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></span></summary>';
-    h+='<div class="tiny" style="margin:4px 0 12px;line-height:1.6">Year to date figures from your <b>most recent</b> payslip'+(edHSE()?', from the block at the bottom headed Year to Date':'')+'. Update it each payslip.</div>';
+    h+='<details'+(c.ytd?'':' open')+'><summary style="font-size:14px;font-weight:600;padding:9px 0;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line-soft)"><span>Payslip anchor<span id="tax-anchor-state" style="font-weight:500;color:'+(c.ytd?'var(--muted)':'var(--warn)')+'"> · '+(c.ytd?'set':'needed')+'</span></span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></span></summary>';
+    h+='<div class="tiny" style="margin:4px 0 12px;line-height:1.6">Year to date figures from your <b>most recent</b> payslip'+(edHSE()?', from the block at the bottom headed Year to Date':'')+'. You only need to do this once. Shifts you log after it keep it up to date.</div>';
     h+='<div class="field" style="margin-bottom:12px"><label class="lbl">Payslip date</label><input type="date" value="'+esc(a.date||'')+'" onchange="setTaxYtd(\'date\',this.value)"></div>';
     // Field names are copied from the payslip itself so it is a matching
     // exercise rather than one that needs the jargon understood.
@@ -1645,7 +1876,7 @@ function renderTaxSetup(){
     req.forEach(function(f){h+=taxNumField(f[0],f[1],a[f[1]],warn[f[1]]);});
     h+='</div>';
     h+='<div class="tiny" style="margin:14px 0 6px;font-weight:600;color:var(--ink)">Optional</div>';
-    h+='<div class="tiny" style="margin-bottom:8px;line-height:1.6">Skip these and you still get the per shift figure. Fill them in and the Totals tab can also show your tax for the whole year, and whether you are owed anything back.</div>';
+    h+='<div class="tiny" style="margin-bottom:8px;line-height:1.6">Skip these and you still get the per shift figure. Fill them in and the Summary tab can also show your tax for the whole year, and whether you are owed anything back.</div>';
     h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
     opt.forEach(function(f){h+=taxNumField(f[0],f[1],a[f[1]],warn[f[1]]);});
     h+='</div>';
@@ -2018,7 +2249,9 @@ function renderSummary(){
   var hn=showNet?ieNetOfPayslip(nextPay,dateStr(new Date())):null;
   var headline=showNet?hn.keep:nextPay;
   var eps=headline.toFixed(2).split('.'),efmt=eps[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
-  var html='<div class="hero"><div class="hero-lbl">'+(showNet?'Est. Take Home':'Est. Gross')+' &middot; Next Payslip</div>';
+  var html='';
+  if(hsePointCardDue())html+=hseChangeoverCardHTML();
+  html+='<div class="hero"><div class="hero-lbl">'+(showNet?'Est. Take Home':'Est. Gross')+' &middot; Next Payslip</div>';
   html+='<div class="hero-num">€'+efmt+'<span class="cent">.'+(eps[1]||'00')+'</span></div>';
   if(showNet)html+='<div class="hero-tiny">'+fmtEUR(nextPay)+' gross, less '+fmtEUR(hn.deduct)+' in deductions</div>';
   else html+='<div class="hero-tiny">Pay earned this '+payPeriodLabel()+', plus deferred amounts from previous '+payPeriodLabel()+'s</div>';
@@ -2506,11 +2739,13 @@ function saveEdit(id){
     var uoSave=document.getElementById('ed-uo-'+id),ruSave=document.getElementById('ed-ru-'+id);
     if(uoSave&&uoSave.checked&&ruSave&&validTime(ruSave.value))s.hse.rosteredUntil=ruSave.value;else delete s.hse.rosteredUntil;
     if(offsite){s.offsite=true;s.callIns=cleanCIs;}else{delete s.offsite;delete s.callIns;}
-    // Date may have moved across a scale boundary: refresh the stored rate
-    // unless the profile has a manual override.
+    // Date may have moved across a scale boundary or a grade change: refresh
+    // the stored rate from the role in force on the new date, unless the
+    // profile has a manual override.
     if(s.hse.gradeCode&&HSE_SCALES&&(!hseProfile()||hseProfile().hourlyOverride==null)){
-      var fresh=hseHourly(s.hse.gradeCode,s.hse.point||1,date);
-      if(fresh){s.hse.hourly=fresh.hourly;s.hse.annual=fresh.annual;s.hse.scaleEdition=fresh.scaleEdition;s.hse.hse_scale_edition=fresh.scaleEdition;}
+      var role=(hseProfile()&&hseProfile().gradeCode)?hseRoleOn(date):{gradeCode:s.hse.gradeCode,point:s.hse.point||1};
+      var fresh=hseHourly(role.gradeCode,role.point,date);
+      if(fresh){s.hse.gradeCode=role.gradeCode;s.hse.point=role.point;s.hse.hourly=fresh.hourly;s.hse.annual=fresh.annual;s.hse.scaleEdition=fresh.scaleEdition;s.hse.hse_scale_edition=fresh.scaleEdition;}
     }
     delete s._editBHDay1;delete s._editBHDay2;delete s._editOffsite;delete s._editCallIns;delete s._editPreCall;delete s._editCallFrom;
     hseRecomputeAll();
@@ -2983,7 +3218,7 @@ var onbStep=0;
 var onbSteps=[
   {artType:'mark',title:'Welcome to ShiftPay',body:'Track your gross pay across complex shift patterns. Your data stays on your device. No accounts, no cloud.',cta:'Get started'},
   {artType:'bands',title:'Define your pay bands',body:'Standard, night, weekends, bank holidays: each with its own rate. Add your actual rates from your payslip in Setup.',cta:'Next'},
-  {artType:'log',title:'Log shifts in seconds',body:'Pick a date, set start and end, optionally a break. We split hours across your bands automatically and show the gross before you save.<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.5">Calculates your gross pay before tax, USC, PRSI and pension. Verify against your payslip.</div>',cta:'Start tracking'}
+  {artType:'log',title:'Log shifts in seconds',body:'Pick a date, set start and end, optionally a break. We split hours across your bands automatically and show the gross before you save.<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.5">Shows your gross pay. Turn on net pay in Setup to estimate what you keep. Verify against your payslip.</div>',cta:'Start tracking'}
 ];
 function renderOnboarding(){
   var step=onbSteps[onbStep];
@@ -3421,6 +3656,103 @@ initSheetSwipe('pay-sheet',closePaySheet);
     var snapOT=(shifts[1].split.filter(function(r){return r.name==='Called in';})[0]||{}).slip;
     var snapOC=(shifts[1].split.filter(function(r){return r.id==='hse_oncall';})[0]||{}).slip;
     t('H14b','A shift with snapshotted arrears ignores later setting changes',{ot:0,offsite:0},{ot:snapOT,offsite:snapOC},snapOT===0&&snapOC===0);
+
+    // Changeover and the yearly point step.
+    t('H15','July changeover is the second Monday in July',{y2026:'2026-07-13',y2027:'2027-07-12',y2029:'2029-07-09'},
+      {y2026:changeoverDate(2026),y2027:changeoverDate(2027),y2029:changeoverDate(2029)},
+      changeoverDate(2026)==='2026-07-13'&&changeoverDate(2027)==='2027-07-12'&&changeoverDate(2029)==='2029-07-09');
+    var pS15=settings.periodType,pT15=settings.tax;settings.periodType='monthly';
+    settings.hse={gradeCode:'1628',point:3,prevPoint:2,pointFrom:'2026-07-13',pointYear:2026,ed:false};
+    var jun=hseBasicInPeriod(2026,6),jul=hseBasicInPeriod(2026,7),aug=hseBasicInPeriod(2026,8);
+    var expJul=80651/12*12/31+83341/12*19/31;
+    t('H16','The step up applies from changeover, and July splits by day',{jun:+(80651/12).toFixed(2),jul:+expJul.toFixed(2),aug:+(83341/12).toFixed(2)},
+      {jun:+jun.toFixed(2),jul:+jul.toFixed(2),aug:+aug.toFixed(2)},
+      approx(jun,80651/12,0.005)&&approx(jul,expJul,0.005)&&approx(aug,83341/12,0.005));
+    t('H17','Shifts before changeover are priced on the old point',{jul1:2,jul20:3},{jul1:hsePointOn('2026-07-01'),jul20:hsePointOn('2026-07-20')},
+      hsePointOn('2026-07-01')===2&&hsePointOn('2026-07-20')===3);
+    settings.hse={gradeCode:'1628',point:3,pointYear:hsePayYear()-1,ed:false};
+    var due1=hsePointCardDue();settings.hse.pointYear=hsePayYear();var due2=hsePointCardDue();
+    settings.hse.point=7;settings.hse.pointYear=hsePayYear()-1;var due3=hsePointCardDue();
+    t('H18','Changeover card: due once a pay year, top point included since promotion can follow',{lastYear:true,thisYear:false,topPoint:true},
+      {lastYear:due1,thisYear:due2,topPoint:due3},due1===true&&due2===false&&due3===true);
+    settings.hse={gradeCode:'1538',point:1,prevGradeCode:'1012',prevPoint:7,pointFrom:'2026-07-13',pointYear:2026,ed:false};
+    var shoJun=hseBasicInPeriod(2026,6),regAug=hseBasicInPeriod(2026,8),r1=hseRoleOn('2026-07-01'),r2=hseRoleOn('2026-07-20');
+    t('H18b','SHO to Registrar at changeover: SHO pay before, Registrar after',
+      {jun:+(75623/12).toFixed(2),aug:+(70276/12).toFixed(2),jul1:'1012/7',jul20:'1538/1'},
+      {jun:+shoJun.toFixed(2),aug:+regAug.toFixed(2),jul1:r1.gradeCode+'/'+r1.point,jul20:r2.gradeCode+'/'+r2.point},
+      approx(shoJun,75623/12,0.005)&&approx(regAug,70276/12,0.005)&&r1.gradeCode==='1012'&&r1.point===7&&r2.gradeCode==='1538'&&r2.point===1);
+
+    // An anchor from last tax year: totals restart on 1 January, salary accrues
+    // from period 1, and the person's own credits and cut off carry over.
+    settings.hse={gradeCode:'1628',point:3,ed:false};
+    settings.tax={on:true,srcop:'',credits:'',ae:false,other:'',ytd:{date:'2026-09-30',gross:'90000',taxableTd:'84000',
+      prsiableTd:'88000',cutoffTd:'33000.03',creditTd:'3000.06',tax:'21000',usc:'3500',prsi:'3700',pensionTd:'3100',ascTd:'1150',ae:''}};
+    var bF=hseBasicDeductions('2027-02-15',12),pF=taxPosition('2027-02-28');
+    t('H19','Last year\'s anchor: new year starts from zero with two months of salary',
+      {gross:+(2*bF.basic).toFixed(2),taxable:+(2*(bF.basic-bF.pension-bF.asc)).toFixed(2),paidTax:0,anchorN:0},
+      {gross:+pF.gross.toFixed(2),taxable:+pF.taxable.toFixed(2),paidTax:pF.paid.tax,anchorN:pF.anchorN},
+      approx(pF.gross,2*bF.basic,0.01)&&approx(pF.taxable,2*(bF.basic-bF.pension-bF.asc),0.01)&&pF.paid.tax===0&&pF.anchorN===0);
+    var eF=ieEstimate('2027-02-28'),cF=ieCumulativeTax(pF.taxable,'2027-02-28',2);
+    t('H20','Last year\'s anchor: February tax is two periods of the same credits and cut off',
+      {period:2,tax:+cF.tax.toFixed(2),credits:666.68},
+      {period:eF.period.n,tax:+eF.tax.toFixed(2),credits:+cF.credits.toFixed(2)},
+      eF.period.n===2&&approx(eF.tax,cF.tax,0.01)&&approx(cF.credits,666.68,0.005));
+    // Grade change in Setup, applied from a date: shifts from then are repriced
+    // at the new rate, earlier ones keep theirs, and salary splits on the date.
+    var keepFns={persist:window.persist,toast:window.toast},keepSh=shifts;
+    window.persist=function(){};window.toast=function(){};
+    try{
+      settings.hse={gradeCode:'1012',point:7,pointYear:hsePayYear(),ed:false,slips:{core:0,ot:0,offsite:0}};
+      var shoH=hseHourly('1012',7,'2026-09-01').hourly;
+      var mk=function(id,ds){return{id:id,date:ds,start:'18:00',end:'22:00',breakMin:0,breakStart:'',endsNextDay:false,hse:{gradeCode:'1012',point:7,ed:false,hourly:shoH,slips:{core:0,ot:0,offsite:0}}};};
+      shifts=[mk(9101,'2026-09-05'),mk(9102,'2026-09-25')];
+      hseRolePending={gradeCode:'1538',point:4,mode:'date',date:'2026-09-20'};
+      hseRoleApply();
+      var regH=hseHourly('1538',4,'2026-09-25').hourly,pr=hseProfile();
+      t('H21','Grade change from a date: later shifts repriced, earlier ones kept, salary history set',
+        {before:+shoH.toFixed(4),after:+regH.toFixed(4),prev:'1012/7',from:'2026-09-20',pending:null},
+        {before:+shifts[0].hse.hourly.toFixed(4),after:+shifts[1].hse.hourly.toFixed(4),prev:pr.roles[0].gradeCode+'/'+pr.roles[0].point,from:pr.roles[1]&&pr.roles[1].from,pending:hseRolePending},
+        !approx(shoH,regH,0.01)&&approx(shifts[0].hse.hourly,shoH,1e-9)&&approx(shifts[1].hse.hourly,regH,1e-9)&&pr.roles.length===2&&pr.roles[0].gradeCode==='1012'&&pr.roles[0].point===7&&pr.roles[1].from==='2026-09-20'&&hseRolePending===null);
+      hseRolePending={gradeCode:'1538',point:5,mode:'all'};
+      hseRoleApply();
+      var reg4=hseHourly('1538',5,'2026-09-05').hourly;
+      t('H22','Applied to all shifts: every shift repriced and no history kept',
+        {first:+reg4.toFixed(4),history:false},{first:+shifts[0].hse.hourly.toFixed(4),history:hseRoles().length>1},
+        approx(shifts[0].hse.hourly,reg4,1e-9)&&hseRoles().length===1);
+
+      // Mid-year grade change, then the July step: SHO to Registrar in
+      // January, Registrar point 1 to 2 at changeover.
+      settings.hse={gradeCode:'1012',point:5,pointYear:hsePayYear(),ed:false,slips:{core:0,ot:0,offsite:0}};
+      shifts=[mk(9201,'2026-01-10'),mk(9202,'2026-03-10'),mk(9203,'2026-08-10')];
+      shifts.forEach(function(x){x.hse.gradeCode='1012';x.hse.point=5;x.hse.hourly=hseHourly('1012',5,x.date).hourly;});
+      hseRoleFrom(hseProfile(),'2026-02-02','1538',1);hseRestampShifts(false);
+      hseRoleFrom(hseProfile(),'2026-07-13','1538',2);hseRestampShifts(false);
+      var RL=hseRoles(),rr=function(ds){var x=hseRoleOn(ds);return x.gradeCode+'/'+x.point;};
+      t('H23','Two changes in a year: each date keeps its own grade and point',
+        {jan:'1012/5',mar:'1538/1',aug:'1538/2',entries:3,current:'1538/2'},
+        {jan:rr('2026-01-10'),mar:rr('2026-03-10'),aug:rr('2026-08-10'),entries:RL.length,current:hseProfile().gradeCode+'/'+hseProfile().point},
+        rr('2026-01-10')==='1012/5'&&rr('2026-03-10')==='1538/1'&&rr('2026-08-10')==='1538/2'&&RL.length===3&&hseProfile().point===2);
+      t('H24','Shifts repriced to the grade on their own date',
+        {jan:+hseHourly('1012',5,'2026-01-10').hourly.toFixed(4),mar:+hseHourly('1538',1,'2026-03-10').hourly.toFixed(4),aug:+hseHourly('1538',2,'2026-08-10').hourly.toFixed(4)},
+        {jan:+shifts[0].hse.hourly.toFixed(4),mar:+shifts[1].hse.hourly.toFixed(4),aug:+shifts[2].hse.hourly.toFixed(4)},
+        approx(shifts[0].hse.hourly,hseHourly('1012',5,'2026-01-10').hourly,1e-9)&&approx(shifts[1].hse.hourly,hseHourly('1538',1,'2026-03-10').hourly,1e-9)&&approx(shifts[2].hse.hourly,hseHourly('1538',2,'2026-08-10').hourly,1e-9));
+      var febExp=hseHourly('1012',5,'2026-02-15').annual/12*1/28+hseHourly('1538',1,'2026-02-15').annual/12*27/28;
+      t('H25','The month of a change is split by day',+febExp.toFixed(2),+hseBasicInPeriod(2026,2).toFixed(2),approx(hseBasicInPeriod(2026,2),febExp,0.005));
+      // Three months SHO, three months Registrar, back to SHO, then a change
+      // dated before the Registrar spell replaces everything after it.
+      hseRoleFrom(hseProfile(),'2026-04-01','1012',5);
+      t('H26','A change dated earlier supersedes every change after it',{entries:3,aug:'1012/5'},{entries:hseRoles().length,aug:rr('2026-08-10')},
+        hseRoles().length===3&&rr('2026-08-10')==='1012/5');
+      // Moving a date and removing a change from the history list.
+      var keepR=window.renderBands,keepL=window.refreshLog,keepS2=window.renderSummary,keepT=window.renderTotals;
+      window.renderBands=window.refreshLog=window.renderSummary=window.renderTotals=function(){};
+      hseRoleEditDate(2,'2026-05-01');var moved=rr('2026-04-15');
+      hseRoleRemove(1);var afterRemove=hseRoles().length,feb=rr('2026-03-10');
+      window.renderBands=keepR;window.refreshLog=keepL;window.renderSummary=keepS2;window.renderTotals=keepT;
+      t('H27','History list: moving a date works, and removing the Registrar spell leaves one SHO entry',{apr15:'1538/1',entries:1,mar:'1012/5'},
+        {apr15:moved,entries:afterRemove,mar:feb},moved==='1538/1'&&afterRemove===1&&feb==='1012/5');
+    }finally{window.persist=keepFns.persist;window.toast=keepFns.toast;shifts=keepSh;hseRolePending=null;}
+    settings.periodType=pS15;settings.tax=pT15;
     settings.hse=prevHse;
     shifts=prevShifts;edition=prevEdition;
     return R;
@@ -3495,7 +3827,7 @@ initSheetSwipe('pay-sheet',closePaySheet);
       e2.total>e2.stopTotal&&approx(e2.refundIfStop,e2.total-e2.stopTotal,0.01));
     settings.tax.ytd={date:'2025-11-30',gross:40000,tax:5000,usc:800,prsi:1700,ae:0};
     var e3=ieEstimate('2026-03-31');
-    t('X23','An anchor from last year is ignored rather than carried into this one',{gross:5000,anchored:false},{gross:+e3.gross.toFixed(2),anchored:e3.anchored},approx(e3.gross,5000)&&e3.anchored===false);
+    t('X23','An anchor from last year carries the person over, but its totals restart at zero',{gross:5000,anchored:true,drift:null},{gross:+e3.gross.toFixed(2),anchored:e3.anchored,drift:e3.drift},approx(e3.gross,5000)&&e3.anchored===true&&e3.drift===null);
     // A week in arrears moves the shift into the next tax week, which is an
     // extra period of credits and cut off against it. Confirmed on the real
     // timesheets: work to Sunday 20 September was paid on the week 39 payslip.
@@ -3510,6 +3842,19 @@ initSheetSwipe('pay-sheet',closePaySheet);
       {paidSameWeek:38,paidAWeekLater:39},{paidSameWeek:payWeekWithSlip(0),paidAWeekLater:payWeekWithSlip(1)},
       payWeekWithSlip(0)===38&&payWeekWithSlip(1)===39);
     shifts=[];
+
+    // Net pay settings must survive a reopen. Round trip through storage, then
+    // put back exactly what was there so running the tests never touches data.
+    var keys=['bands','shifts','templates','manuals','settings'],saved={};
+    keys.forEach(function(k){try{saved[k]=localStorage.getItem('shiftpay.'+k);}catch(e){}});
+    settings.tax={on:true,srcop:'',credits:'',ae:false,other:'10',ytd:{date:'2026-08-26',taxableTd:'50000'}};
+    persist();settings.tax=null;loadData();
+    var back=settings.tax||{};
+    t('X25','Net pay settings and the payslip anchor survive reopening the app',
+      {on:true,other:'10',anchorDate:'2026-08-26'},
+      {on:!!back.on,other:back.other,anchorDate:back.ytd&&back.ytd.date},
+      back.on===true&&back.other==='10'&&!!back.ytd&&back.ytd.date==='2026-08-26');
+    keys.forEach(function(k){try{if(saved[k]===null)localStorage.removeItem('shiftpay.'+k);else localStorage.setItem('shiftpay.'+k,saved[k]);}catch(e){}});
 
     settings=prevS;shifts=prevSh;manualEntries=prevM;edition=prevEd;
     return R;
@@ -3644,6 +3989,39 @@ initSheetSwipe('pay-sheet',closePaySheet);
     var slipNoPark=ieNetOfPayslip(FX.gross,'2026-09-30');
     t('HPF4','Dropping the car parking deduction moves nett by exactly that',FF.parking,
       +(slipNoPark.keep-slip.keep).toFixed(2),approx(slipNoPark.keep-slip.keep,FF.parking,0.01));
+    settings.tax.other=String(FF.parking);
+
+    // Never updating the anchor: still on August, with September already paid,
+    // October must come out the same as anchoring on the real September payslip.
+    var octStale=ieNetOfPayslip(FX.basic,'2026-10-31');
+    var FA0=FIXTURES.hseAnchor;
+    settings.tax.ytd={date:FA0.date,gross:FA0.gross,taxableTd:FA0.taxableTd,prsiableTd:FA0.prsiableTd,cutoffTd:FA0.cutoffTd,
+      creditTd:FA0.creditTd,tax:FA0.tax,usc:FA0.usc,prsi:FA0.prsi,pensionTd:FA0.pensionTd,ascTd:FA0.ascTd};
+    manualEntries=[];
+    var octFresh=ieNetOfPayslip(FX.basic,'2026-10-31');
+    t('HPF5','A month-old anchor predicts October exactly as a fresh one does',
+      {deds:+octFresh.deduct.toFixed(2),nett:+octFresh.keep.toFixed(2)},{deds:+octStale.deduct.toFixed(2),nett:+octStale.keep.toFixed(2)},
+      approx(octStale.keep,octFresh.keep,0.02));
+
+    // Anchor once in January and never again: log each month's extras, let the
+    // app step the point up at changeover, and see how close September lands.
+    // Extras are read off the payslips as PRSIable pay less pensionable pay.
+    var J=SLIPS.filter(function(x){return x.id==='HP9';})[0],S9=SLIPS.filter(function(x){return x.id==='HP1';})[0];
+    if(J&&S9&&S9.pensionableTd){
+      settings.hse={gradeCode:FF.grade,point:3,prevPoint:2,pointFrom:'2026-07-13',pointYear:2026,ed:false,slips:{core:0,ot:0,offsite:0}};
+      settings.tax.ytd={date:J.date,gross:J.gross,taxableTd:J.taxableTd,prsiableTd:J.prsiableTd,cutoffTd:J.cutoffTd,creditTd:J.credTd,
+        tax:J.taxTd,usc:J.uscTd,prsi:J.prsi,pensionTd:J.pension,ascTd:J.asc};
+      var extrasFebSep=(S9.prsiableTd-J.prsiableTd)-(S9.pensionableTd-J.pensionable);
+      manualEntries=[{id:8200,date:'2026-09-15',amount:+extrasFebSep.toFixed(2)}];
+      var posJ=taxPosition('2026-09-30');
+      t('HPF6','Anchored once in January, September year to date lands within 20 euro',
+        {taxable:S9.taxableTd,prsiable:S9.prsiableTd},{taxable:+posJ.taxable.toFixed(2),prsiable:+posJ.uscable.toFixed(2)},
+        approx(posJ.taxable,S9.taxableTd,20)&&approx(posJ.uscable,S9.prsiableTd,20));
+      var slipJ=ieNetOfPayslip(FX.gross,'2026-09-30');
+      // Nett lands on the cent: the small salary timing error sits on both sides
+      // of the payslip calculation, at the same 40% and 8% rates, and cancels.
+      t('HPF7','Anchored once in January, September nett pay matches the real payslip',FX.nett,+slipJ.keep.toFixed(2),approx(slipJ.keep,FX.nett,0.05));
+    }
     shifts=pS;manualEntries=pM;settings.hse=pH;
 
     // End to end on HSE payroll: anchored on a real September payslip, what an
