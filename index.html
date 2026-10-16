@@ -1404,11 +1404,12 @@ var IE_RATES=[
 ];
 function ieRates(ds){var c=IE_RATES[0];for(var i=0;i<IE_RATES.length;i++)if(IE_RATES[i].from<=ds)c=IE_RATES[i];return c;}
 function ensureTax(){
-  if(!settings.tax)settings.tax={on:false,srcop:'',credits:'',ae:true,other:'',ytd:null};
+  if(!settings.tax)settings.tax={on:true,srcop:'',credits:'',ae:true,other:'',ytd:null};
   if(!settings.tax.ytd)settings.tax.ytd={date:'',gross:'',tax:'',usc:'',prsi:'',ae:'',cutoffTd:'',creditTd:'',taxableTd:'',prsiableTd:'',pensionTd:'',ascTd:''};
   return settings.tax;
 }
-function taxOn(){return edTax()&&!!(settings.tax&&settings.tax.on);}
+// On unless switched off: take home is what people open the app for.
+function taxOn(){return edTax()&&(settings.tax?!!settings.tax.on:true);}
 // A date safely inside tax period n, for pricing salary in that period.
 function periodMidDate(yr,n){
   var of=taxPeriodNo(yr+'-06-15').of;
@@ -1677,11 +1678,20 @@ function sumPeriods(m){var t=0;for(var k in m)t+=m[k].gross;return t;}
 // rebuilt from salary and logged shifts. An anchor from an earlier tax year
 // still says who this is (credits, cut off) but its totals belonged to that
 // year, and cumulative pay restarts at zero on 1 January.
+// The last day of the tax period ds falls in. Everything paid on or before
+// the payslip being estimated counts, including shifts logged ahead that land
+// on it; only pay for payslips after it is left out.
+function taxPeriodEnd(ds){
+  var p=taxPeriodNo(ds),y=+ds.slice(0,4);
+  if(p.of===12)return dateStr(new Date(y,p.n,0));
+  var d=new Date(y,0,1);d.setDate(d.getDate()+p.n*(p.of===26?14:7)-1);
+  var e=dateStr(d);return e>y+'-12-31'?y+'-12-31':e;
+}
 function taxPosition(ds){
   var c=taxCfg(ds),yr=ds.slice(0,4),a=c.ytd,pp=taxPeriodNo(ds);
   var useA=!!(a&&a.date<=ds),same=useA&&String(a.date).slice(0,4)===yr;
   var an=same?taxPeriodNo(a.date).n:0;
-  var since=grossByPeriod(same?nextDayStr(a.date):yr+'-01-01',yr+'-12-31'),add=sumPeriods(since);
+  var since=grossByPeriod(same?nextDayStr(a.date):yr+'-01-01',taxPeriodEnd(ds)),add=sumPeriods(since);
   var A=function(k){return same?(parseFloat(a[k])||0):0;};
   var g=A('gross')+add;
   // HSE payroll charges tax and USC on two different bases, both printed on
@@ -2190,7 +2200,8 @@ function monthKeyName(mk){var d=new Date(Math.floor(mk/100),mk%100,1);return d.t
 
 function renderSummary(){
   var el=document.getElementById('summary-body');if(!el)return;
-  if(!shifts.length&&!manualEntries.length){
+  var salaried=edHSE()&&hseBasicForPeriod(dateStr(new Date()))>0;
+  if(!shifts.length&&!manualEntries.length&&!salaried){
     el.innerHTML='<div class="empty-state"><svg width="90" height="90" viewBox="0 0 1024 1024" style="margin-bottom:20px"><circle cx="512" cy="512" r="500" fill="var(--cream-card)" stroke="var(--line)" stroke-width="12"/><path d="M 540.01 245.47 A 268 268 0 0 1 717.30 684.27" stroke="var(--blue)" stroke-width="78" fill="none" stroke-linecap="round"/><path d="M 684.27 717.30 A 268 268 0 0 1 312.84 691.33" stroke="var(--blue)" stroke-opacity="0.6" stroke-width="78" fill="none" stroke-linecap="round"/><path d="M 284.72 654.02 A 268 268 0 0 1 289.82 362.14" stroke="var(--blue)" stroke-opacity="0.38" stroke-width="78" fill="none" stroke-linecap="round"/><path d="M 319.22 325.83 A 268 268 0 0 1 521.35 244.16" stroke="var(--blue)" stroke-opacity="0.22" stroke-width="78" fill="none" stroke-linecap="round"/><line x1="512" y1="512" x2="512" y2="344" stroke="var(--blue)" stroke-width="40" stroke-linecap="round"/><line x1="512" y1="512" x2="605.5" y2="590.4" stroke="var(--blue)" stroke-width="40" stroke-linecap="round"/><circle cx="512" cy="512" r="34" fill="var(--cream-card)"/><circle cx="512" cy="512" r="34" fill="none" stroke="var(--blue)" stroke-width="22"/></svg><div class="empty-title">No shifts yet</div><div class="empty-sub">Log a shift and your estimated gross will show up here, split across your pay bands.</div><button class="btn-primary" style="max-width:260px" onclick="go(\'log\',document.getElementById(\'tb-log\'))">Log your first shift</button></div>';
     return;
   }
@@ -2238,15 +2249,20 @@ function renderSummary(){
   // Net is what people actually want from this screen: what lands in the bank
   // next payslip. Gross becomes the supporting line. Net needs the payslip
   // anchor to be right, so without one show gross rather than a wrong net.
+  // Tax runs on the date the payslip is paid, which with arrears can sit in a
+  // later tax period than today. Shifts already logged that land on it count.
+  var nextPayDS=payDateOf(currentKey);
   if(edHSE()){
-    var hb=hseBasicForPeriod(dateStr(new Date()),taxPeriodNo(dateStr(new Date())).of);
+    var hb=hseBasicForPeriod(nextPayDS);
     if(hb>0){
       nextPay+=hb;
       byBand['hse_basic']={id:'hse_basic',name:'Basic pay',color:'#2563eb',hours:0,amount:hb};
     }
   }
-  var showNet=taxOn()&&nextPay>0&&!!taxCfg().ytd;
-  var hn=showNet?ieNetOfPayslip(nextPay,dateStr(new Date())):null;
+  // Take home whenever net pay is on. Without a payslip anchor it is built from
+  // salary and logged shifts alone, so it is labelled rough rather than hidden.
+  var anchored=!!taxCfg().ytd,showNet=taxOn()&&nextPay>0;
+  var hn=showNet?ieNetOfPayslip(nextPay,nextPayDS):null;
   var headline=showNet?hn.keep:nextPay;
   var eps=headline.toFixed(2).split('.'),efmt=eps[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
   var html='';
@@ -2256,7 +2272,8 @@ function renderSummary(){
   if(showNet)html+='<div class="hero-tiny">'+fmtEUR(nextPay)+' gross, less '+fmtEUR(hn.deduct)+' in deductions</div>';
   else html+='<div class="hero-tiny">Pay earned this '+payPeriodLabel()+', plus deferred amounts from previous '+payPeriodLabel()+'s</div>';
   if(settings.nextPayslipDate)html+='<div class="hero-tiny" style="margin-top:4px">Period ends <span class="hero-pill">'+payslipStr+'</span></div>';
-  if(taxOn()&&nextPay>0&&!showNet)html+='<div class="hero-tiny" style="margin-top:8px">Add your payslip anchor in Setup to see take home</div>';
+  if(showNet&&!anchored)html+='<div class="hero-tiny" style="margin-top:8px">Rough estimate. Add a payslip in Setup for best accuracy.</div>';
+  if(!taxOn()&&nextPay>0)html+='<div class="hero-tiny" style="margin-top:8px">Turn on net pay in Setup to see your take home.</div>';
   html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">'+(showNet?'Estimate. Verify against your payslip.':'Gross only, before tax, USC, PRSI and pension.')+'</div>';
   html+='</div>';
   var bandArr=[];for(var k in byBand){byBand[k].id=k;bandArr.push(byBand[k]);}stableBandOrder(bandArr);
@@ -2411,6 +2428,8 @@ function buildListHTML(){
     }
   });
   manualEntries.forEach(function(m){var k=getPeriodKey(m.date);if(!periodMap[k])periodMap[k]={};});
+  // On HSE payroll salary makes every month a payslip, logged shifts or not.
+  if(isPayslipMode&&edHSE()&&hseBasicForPeriod(dateStr(new Date()))>0){var ck=currentPeriodKeyOffset(0);if(!periodMap[ck])periodMap[ck]={};}
   var periodKeys=Object.keys(periodMap).map(Number).sort(function(a,b){return b-a;});
   if(!periodKeys.length)return'';
   var currentKey=currentPeriodKeyOffset(0);
@@ -2482,12 +2501,24 @@ function buildListHTML(){
         var chevCls='chev'+(open?' open':'');
         var deferN=(!isPayslipMode&&settings.periodDefers&&settings.periodDefers[k])||0;
         var entrieslbl=totalItems+' entr'+(totalItems!==1?'ies':'y')+' \u00b7 '+periodHrs.toFixed(1)+'h';
+        if(isPayslipMode&&edHSE()&&hseBasicForPeriod(payDateOf(k))>0)entrieslbl='Basic pay'+(totalItems?' + '+totalItems+' entr'+(totalItems!==1?'ies':'y')+' \u00b7 '+periodHrs.toFixed(1)+'h':'');
         var subExtra=deferN>0?' <span style="color:#a05a00">\u00b7 Deferred +'+deferN+'</span>':'';
         var headerLabel=isPayslipMode?getPayslipLabel(k):getPeriodLabel(k);
+        // Payslip view: what that payslip pays out. On HSE that is salary plus
+        // the extras landing on it. Take home only for payslips after the
+        // anchor; earlier ones are already printed on the real payslip.
+        var slipGross=periodPay,slipNet=null;
+        if(isPayslipMode){
+          var payDS=payDateOf(k);
+          if(edHSE())slipGross+=hseBasicForPeriod(payDS);
+          var anc=taxCfg().ytd;
+          if(taxOn()&&slipGross>0&&(!anc||payDS>anc.date))slipNet=ieNetOfPayslip(slipGross,payDS).keep;
+        }
         html+='<div class="'+cardCls+'">';
         html+='<div class="period-head" onclick="togglePeriod('+k+')">';
         html+='<div><div class="period-name">'+headerLabel+'</div><div class="period-sub">'+entrieslbl+subExtra+'</div></div>';
-        html+='<div style="display:flex;align-items:center"><div class="period-amt">'+fmtEUR(periodPay)+'</div>';
+        if(slipNet!==null)html+='<div style="display:flex;align-items:center"><div style="text-align:right"><div class="period-amt">'+fmtEUR(slipNet)+'</div><div class="period-sub">'+fmtEUR(slipGross)+' gross</div></div>';
+        else html+='<div style="display:flex;align-items:center"><div class="period-amt">'+fmtEUR(isPayslipMode?slipGross:periodPay)+'</div>';
         html+='<div class="'+chevCls+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></div></div>';
         html+='</div>';
         if(open){
@@ -3218,7 +3249,7 @@ var onbStep=0;
 var onbSteps=[
   {artType:'mark',title:'Welcome to ShiftPay',body:'Track your gross pay across complex shift patterns. Your data stays on your device. No accounts, no cloud.',cta:'Get started'},
   {artType:'bands',title:'Define your pay bands',body:'Standard, night, weekends, bank holidays: each with its own rate. Add your actual rates from your payslip in Setup.',cta:'Next'},
-  {artType:'log',title:'Log shifts in seconds',body:'Pick a date, set start and end, optionally a break. We split hours across your bands automatically and show the gross before you save.<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.5">Shows your gross pay. Turn on net pay in Setup to estimate what you keep. Verify against your payslip.</div>',cta:'Start tracking'}
+  {artType:'log',title:'Log shifts in seconds',body:'Pick a date, set start and end, optionally a break. We split hours across your bands automatically and show the gross before you save.<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.5">Shows your take home for each payslip. Add the figures from one payslip in Setup for best accuracy. Verify against your payslip.</div>',cta:'Start tracking'}
 ];
 function renderOnboarding(){
   var step=onbSteps[onbStep];
@@ -3752,6 +3783,22 @@ initSheetSwipe('pay-sheet',closePaySheet);
       t('H27','History list: moving a date works, and removing the Registrar spell leaves one SHO entry',{apr15:'1538/1',entries:1,mar:'1012/5'},
         {apr15:moved,entries:afterRemove,mar:feb},moved==='1538/1'&&afterRemove===1&&feb==='1012/5');
     }finally{window.persist=keepFns.persist;window.toast=keepFns.toast;shifts=keepSh;hseRolePending=null;}
+    // Shifts logged ahead belong to later payslips: logging December overtime
+    // must not change what October's payslip is estimated to pay.
+    settings.hse={gradeCode:'1628',point:3,ed:false};
+    settings.tax={on:true,srcop:'',credits:'',ae:false,other:'',ytd:{date:'2026-09-30',gross:'90000',taxableTd:'84000',
+      prsiableTd:'88000',cutoffTd:'33000.03',creditTd:'3000.06',tax:'21000',usc:'3500',prsi:'3700',pensionTd:'3100',ascTd:'1150',ae:''}};
+    var keepM28=manualEntries,keepS28=shifts,octB=hseBasicForPeriod('2026-10-31');shifts=[];
+    manualEntries=[];var octA=ieNetOfPayslip(octB,'2026-10-31').keep;
+    manualEntries=[{id:9301,date:'2026-12-10',amount:3000}];var octFut=ieNetOfPayslip(octB,'2026-10-31').keep;
+    t('H28','Overtime logged for December leaves October\'s take home unchanged',+octA.toFixed(2),+octFut.toFixed(2),approx(octA,octFut,0.005));
+    // No payslip entered: an HSE estimate still runs off salary from January.
+    settings.tax={on:true,srcop:'',credits:'',ae:false,other:'',ytd:null};manualEntries=[];
+    var pU=taxPosition('2026-10-31'),sumB=0;for(var k28=1;k28<=10;k28++)sumB+=hseBasicInPeriod(2026,k28);
+    var nU=ieNetOfPayslip(octB,'2026-10-31');
+    t('H29','No payslip entered: salary from January still drives the estimate',{gross:+sumB.toFixed(2),takeHomeBelowGross:true},
+      {gross:+pU.gross.toFixed(2),takeHomeBelowGross:nU.keep>0&&nU.keep<octB},approx(pU.gross,sumB,0.01)&&nU.keep>0&&nU.keep<octB);
+    manualEntries=keepM28;shifts=keepS28;
     settings.periodType=pS15;settings.tax=pT15;
     settings.hse=prevHse;
     shifts=prevShifts;edition=prevEdition;
@@ -3855,6 +3902,22 @@ initSheetSwipe('pay-sheet',closePaySheet);
       {on:!!back.on,other:back.other,anchorDate:back.ytd&&back.ytd.date},
       back.on===true&&back.other==='10'&&!!back.ytd&&back.ytd.date==='2026-08-26');
     keys.forEach(function(k){try{if(saved[k]===null)localStorage.removeItem('shiftpay.'+k);else localStorage.setItem('shiftpay.'+k,saved[k]);}catch(e){}});
+
+    // Paid fortnightly in arrears: a shift worked this fortnight lands on a
+    // payslip dated in the next tax fortnight. It must count towards that
+    // payslip's tax, not be dropped as "later" pay.
+    settings.periodType='biweekly';settings.nextPayslipDate='';
+    settings.tax={on:true,srcop:'',credits:'',ae:false,other:'',ytd:null};
+    // 21 October 2026 is the last day of tax fortnight 21, so its payslip is
+    // dated in fortnight 22.
+    shifts=[];manualEntries=[{id:9401,date:'2026-10-21',amount:1500}];
+    var payNext=payDateOf(getPeriodKey('2026-10-21'));
+    var posAr=taxPosition(payNext),later=taxPeriodNo(payNext).n>taxPeriodNo('2026-10-21').n;
+    t('X26','Fortnightly pay: a shift paid on a payslip in the next tax period counts towards it',{counted:1500,payInLaterPeriod:true},
+      {counted:+posAr.gross.toFixed(2),payInLaterPeriod:later},approx(posAr.gross,1500,0.01)&&later);
+    var keepTax=settings.tax;settings.tax=null;
+    t('X27','Net pay is on by default for new users',true,taxOn(),taxOn()===true);
+    settings.tax=keepTax;
 
     settings=prevS;shifts=prevSh;manualEntries=prevM;edition=prevEd;
     return R;
