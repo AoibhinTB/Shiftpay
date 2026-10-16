@@ -790,8 +790,13 @@ function hseRowsWalk(s,byDate){
   // and shift-work flag, so changing the settings only affects new shifts.
   // Shifts saved before snapshots existed fall back to the live settings.
   var h=hseShiftHourly(s),rows={},slips=(s.hse&&s.hse.slips)||hseSlips(),ed=!!(s.hse&&s.hse.ed);
+  // People log the whole day, rostered hours included. Salary already pays
+  // those hours every month, so Basic hours are kept for the record but add
+  // nothing: only the overtime and premiums on top are extra pay.
+  var sal=hseBasicForPeriod(s.date)>0;
   function add(ds,name,rate,slip,mins){
     var k=(byDate?ds+'|':'')+name;
+    if(name==='Basic'&&sal)rate=0;
     if(!rows[k])rows[k]={ds:ds,id:'hse_'+name.replace(/[^a-z0-9]+/gi,'_').toLowerCase(),name:name,color:HSE_ROW_COLORS[name]||'#0891b2',hours:0,amount:0,rate:rate,slip:slip};
     rows[k].hours+=mins/60;rows[k].amount+=rate*mins/60;
   }
@@ -1227,7 +1232,7 @@ function refreshLogHSE(date,start,end,breakMin,breakStart,bkEl,saveBtn){
     }
     if(rows.length){
       html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:8px">';
-      rows.forEach(function(b){html+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span style="color:var(--muted);font-size:12px">'+b.hours.toFixed(1)+'h · '+fmtEUR(b.rate)+'/h</span></span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';});
+      rows.forEach(function(b){html+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span style="color:var(--muted);font-size:12px">'+b.hours.toFixed(1)+'h · '+fmtEUR(b.rate)+'/h</span></span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+rowAmt(b)+'</span></div>';});
       html+='</div>';
     }
     html+=weekNote;
@@ -1454,7 +1459,29 @@ function hseBasicInPeriod(yr,n){
   }
   return tot;
 }
+// A Basic row from logged hours that salary already pays: show it as such
+// rather than as €0.00.
+function coveredRow(b){return edHSE()&&b.id==='hse_basic'&&!(b.amount>0.004)&&b.hours>0;}
+function rowAmt(b){return coveredRow(b)?'In salary':fmtEUR(b.amount);}
 function hseBasicForPeriod(ds,of){return hseBasicInPeriod(+ds.slice(0,4),taxPeriodNo(ds).n);}
+// Basic salary earned across a date range, for the Summary totals. Counts each
+// tax period whose middle falls in the range, from 1 January of the first year
+// we know about (first logged work or the anchor) up to this period, or later
+// when work is already logged ahead. Future salary is not counted on its own.
+function hseBasicInRange(fromDS,toDS){
+  if(!edHSE()||!(hseBasicForPeriod(dateStr(new Date()))>0))return 0;
+  var today=dateStr(new Date()),first=today,last=taxPeriodEnd(today),anc=taxCfg().ytd;
+  var see=function(d){if(d<first)first=d;var e=taxPeriodEnd(d);if(e>last)last=e;};
+  shifts.forEach(function(x){see(x.date);});manualEntries.forEach(function(m){see(m.date);});
+  if(anc&&anc.date<first)first=anc.date;
+  var lo=first.slice(0,4)+'-01-01',a=fromDS>lo?fromDS:lo,b=toDS<last?toDS:last,tot=0;
+  if(a>b)return 0;
+  for(var yr=+a.slice(0,4);yr<=+b.slice(0,4);yr++){
+    var of=taxPeriodNo(yr+'-06-15').of;
+    for(var n=1;n<=of;n++){var md=periodMidDate(yr,n);if(md>=a&&md<=b)tot+=hseBasicInPeriod(yr,n);}
+  }
+  return tot;
+}
 function hseBasicDeductions(ds,of){
   var basic=hseBasicForPeriod(ds,of);
   return {basic:basic,pension:hsePension(basic,of,ds),asc:hseASC(basic,of,ds)};
@@ -2116,7 +2143,7 @@ function refreshLog(){
     html+=buildRibbonHTML(date,start,end,bhDates,breakMin,breakStart,'light',logEndsNextDay,callOpts,tierBase?JSON.parse(JSON.stringify(tierBase)):undefined);
     if(split.length>0){
       html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:8px">';
-      for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span style="color:var(--muted);font-size:12px">'+b.hours.toFixed(1)+'h \u00b7 '+fmtEUR(b.rate)+'/h</span></span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
+      for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span style="color:var(--muted);font-size:12px">'+b.hours.toFixed(1)+'h \u00b7 '+fmtEUR(b.rate)+'/h</span></span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+rowAmt(b)+'</span></div>';}
       if(breakMin>0)html+='<div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--muted)"><span style="display:flex;align-items:center;gap:9px"><span style="width:14px;height:8px;border-radius:2px;background:repeating-linear-gradient(45deg,var(--muted) 0,var(--muted) 2px,transparent 2px,transparent 5px);display:inline-block"></span>Unpaid break</span><span>\u2212'+breakMin+' min</span></div>';
       html+='</div>';
     } else {html+='<div style="font-size:13px;color:var(--muted);margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">No matching band yet. Add rates in Setup.</div>';}
@@ -2310,7 +2337,7 @@ function renderSummary(){
     var hb=hseBasicForPeriod(nextPayDS);
     if(hb>0){
       nextPay+=hb;
-      byBand['hse_basic']={id:'hse_basic',name:'Basic pay',color:'#2563eb',hours:0,amount:hb};
+      byBand['hse_basic']={id:'hse_basic',name:'Basic pay',color:'#2563eb',hours:byBand['hse_basic']?byBand['hse_basic'].hours:0,amount:hb};
     }
   }
   // Take home whenever net pay is on. Without a payslip anchor it is built from
@@ -2338,7 +2365,7 @@ function renderSummary(){
     html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:12px">Next payslip breakdown</div><div class="bar-track">';
     for(var i=0;i<bandArr.length;i++)html+='<div class="bar-seg" style="background:'+bandArr[i].color+';width:'+(bandArr[i].amount/totalAmt*100)+'%"></div>';
     html+='</div>';
-    for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span>'+(b.hours>0?'<span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span>':'')+'</span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
+    for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span>'+(b.hours>0?'<span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span>':'')+'</span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+rowAmt(b)+'</span></div>';}
     html+='<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;margin-top:2px"><span style="font-size:13px;font-weight:700">Total</span><span style="font-family:Fraunces,serif;font-size:22px;font-weight:600;color:var(--blue);letter-spacing:-0.01em">'+fmtEUR(bandArr.reduce(function(a,b){return a+b.amount;},0))+'</span></div>';
     html+='</div></div>';
   }
@@ -2367,7 +2394,7 @@ function setCustomEnd(v){customEnd=v;renderTotals();}
 function fmtRangeDate(ds){var d=new Date(ds+'T12:00');return d.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'});}
 function renderTotals(){
   var el=document.getElementById('totals-body');if(!el)return;
-  if(!shifts.length&&!manualEntries.length){
+  if(!shifts.length&&!manualEntries.length&&!(edHSE()&&hseBasicForPeriod(dateStr(new Date()))>0)){
     el.innerHTML='<div class="empty-state"><div class="empty-title">Nothing to total yet</div><div class="empty-sub">Log a shift and totals will show up here.</div></div>';
     return;
   }
@@ -2406,6 +2433,9 @@ function renderTotals(){
     }
   });
   var manualAmt=0;manualEntries.forEach(function(m){if(inRange(m.date)){manualAmt+=m.amount||0;totalAmt+=m.amount||0;}});
+  // Gross is basic plus everything logged on top of it.
+  var basicAmt=hseBasicInRange(dateStr(rangeStart),dateStr(rangeEnd));
+  if(basicAmt>0){totalAmt+=basicAmt;bandAgg['hse_basic']={name:'Basic pay',color:'#2563eb',hours:bandAgg['hse_basic']?bandAgg['hse_basic'].hours:0,amount:basicAmt};}
   var bandArr=[];for(var k in bandAgg){bandAgg[k].id=k;bandArr.push(bandAgg[k]);}stableBandOrder(bandArr);
   var fp=totalAmt.toFixed(2).split('.'),fpInt=fp[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
   var html='<div class="pad-x" style="margin-top:14px;margin-bottom:12px"><div class="seg"><button class="'+(totalsRange==='month'?'on':'')+'" onclick="setTotalsRange(\'month\')">Month</button><button class="'+(totalsRange==='year'?'on':'')+'" onclick="setTotalsRange(\'year\')">Year</button><button class="'+(totalsRange==='all'?'on':'')+'" onclick="setTotalsRange(\'all\')">All time</button><button class="'+(totalsRange==='custom'?'on':'')+'" onclick="setTotalsRange(\'custom\')">Custom</button></div>';
@@ -2418,7 +2448,10 @@ function renderTotals(){
   html+='</div>';
   html+='<div class="hero" id="totals-hero" style="touch-action:pan-y"><div class="hero-lbl">Total gross · '+rangeLabel+((totalsRange==='month'||totalsRange==='year')?' <span style="opacity:.5;font-weight:400">· swipe ‹ ›</span>':'')+'</div>';
   html+='<div class="hero-num">€'+fpInt+'<span class="cent">.'+(fp[1]||'00')+'</span></div>';
-  html+='<div class="hero-tiny">'+totalHrs.toFixed(1)+'h · '+shiftCount+' shift'+(shiftCount!==1?'s':'')+(manualAmt>0?(' · '+fmtEUR(manualAmt)+' manual'):'')+'</div></div>';
+  var sub=[];if(basicAmt>0)sub.push(fmtEUR(basicAmt)+' basic');
+  if(shiftCount||!basicAmt)sub.push(totalHrs.toFixed(1)+'h',shiftCount+' shift'+(shiftCount!==1?'s':''));
+  if(manualAmt>0)sub.push(fmtEUR(manualAmt)+' manual');
+  html+='<div class="hero-tiny">'+sub.join(' · ')+'</div></div>';
   if(taxOn()&&totalsRange==='month'){
     // Net pay for the payslips paid this month, worked out payslip by payslip.
     var slips=payslipsPaidIn(dateStr(rangeStart),dateStr(rangeEnd));
@@ -2428,6 +2461,7 @@ function renderTotals(){
       slips.forEach(function(x){T.gross+=x.gross;T.keep+=x.est.keep;for(var q in x.est.parts)T[q]+=x.est.parts[q];});
       html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:10px">Paid in '+rangeLabel+' \u00b7 '+slips.length+' payslip'+(slips.length!==1?'s':'')+'</div>';
       html+=mRow('Gross pay',T.gross,false);
+      html+='<div class="lbl" style="margin:12px 0 2px">Deductions</div>';
       html+=mRow('Income tax',T.tax,true);html+=mRow('USC',T.usc,true);html+=mRow('PRSI',T.prsi,true);
       if(T.pension>0)html+=mRow('Pension',T.pension,true);
       if(T.asc>0)html+=mRow('ASC',T.asc,true);
@@ -2442,9 +2476,10 @@ function renderTotals(){
     var upto=(rangeEnd<now)?dateStr(rangeEnd):dateStr(now);
     var est=ieEstimate(upto);
     if(est.gross>0){
-      var taxRow=function(lbl,val,neg){return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="font-weight:500">'+lbl+'</span><span style="font-weight:600;font-variant-numeric:tabular-nums'+(neg?';color:var(--muted)':'')+'">'+(neg?'\u2212':'')+fmtEUR(val)+'</span></div>';};
+      var taxRow=function(lbl,val,neg){return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="font-weight:500">'+lbl+'</span><span style="font-weight:600;font-variant-numeric:tabular-nums'+(neg?';color:var(--muted)':'')+'">'+fmtEUR(val)+'</span></div>';};
       html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:10px">Tax position \u00b7 '+rangeLabel+' \u00b7 period '+est.period.n+' of '+est.period.of+'</div>';
       html+=taxRow('Gross',est.gross,false);
+      html+='<div class="lbl" style="margin:12px 0 2px">Deductions</div>';
       html+=taxRow('Income tax',est.tax,true);
       html+=taxRow('USC',est.usc,true);
       html+=taxRow('PRSI',est.prsi,true);
@@ -2468,7 +2503,7 @@ function renderTotals(){
     html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:12px">Breakdown by band</div><div class="bar-track">';
     for(var i=0;i<bandArr.length;i++)html+='<div class="bar-seg" style="background:'+bandArr[i].color+';width:'+(bandArr[i].amount/totalForBar*100)+'%"></div>';
     html+='</div>';
-    for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span><span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span></span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEUR(b.amount)+'</span></div>';}
+    for(var i=0;i<bandArr.length;i++){var b=bandArr[i];html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:'+b.color+';flex-shrink:0"></span><span style="font-weight:500">'+esc(b.name)+'</span>'+(b.hours>0?'<span class="mono" style="font-size:11.5px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span>':'')+'</span><span style="font-weight:700;font-variant-numeric:tabular-nums">'+rowAmt(b)+'</span></div>';}
     html+='</div></div>';
   }
   html+='<div class="sect-hdr" style="margin-top:18px"><h2>Calendar</h2></div>';
@@ -2615,7 +2650,7 @@ function buildListHTML(){
           if(isPayslipMode){html+=payslipBreakdownHTML(k,bpArr,dayEntries,slipGross,slipEst);html+='</div></div>';return;}
           if(bpArr.length){
             html+='<div class="band-pills">';
-            bpArr.forEach(function(b){html+='<div class="band-pill" style="background:'+b.color+'18;color:'+b.color+'"><div class="bname">'+esc(b.name)+'</div><div class="bhrs">'+b.hours.toFixed(1)+'h</div><div class="bamt">'+fmtEUR(b.amount)+'</div></div>';});
+            bpArr.forEach(function(b){html+='<div class="band-pill" style="background:'+b.color+'18;color:'+b.color+'"><div class="bname">'+esc(b.name)+'</div><div class="bhrs">'+b.hours.toFixed(1)+'h</div><div class="bamt">'+rowAmt(b)+'</div></div>';});
             html+='</div>';
           }
           dayEntries.forEach(function(entry){
@@ -2665,8 +2700,9 @@ function payslipBreakdownHTML(k,bpArr,dayEntries,gross,est){
   var row=function(lbl,val,o){o=o||{};return '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;'+(o.top?'border-top:1px solid var(--line-soft);':'')+'font-size:'+(o.big?'14.5':'13.5')+'px'+(o.bold?';font-weight:700':'')+'"><span'+(o.muted?' style="color:var(--muted)"':'')+'>'+lbl+'</span><span style="font-variant-numeric:tabular-nums'+(o.neg?';color:var(--muted)':'')+(o.bold?';font-weight:700':';font-weight:600')+'">'+fmtEUR(val)+'</span></div>';};
   var h='<div style="padding:4px 0 6px">';
   h+='<div class="lbl" style="margin:4px 0 2px">Pay</div>';
-  if(edHSE()){var bp=hseBasicForPeriod(payDateOf(k));if(bp>0)h+=row('Basic pay',bp);}
-  bpArr.forEach(function(b){h+=row(esc(b.name)+(b.hours>0?' <span class="mono" style="font-size:11px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span>':''),b.amount);});
+  var bh=0;
+  if(edHSE()){var bp=hseBasicForPeriod(payDateOf(k));if(bp>0){bpArr.forEach(function(b){if(coveredRow(b))bh+=b.hours;});h+=row('Basic pay'+(bh>0?' <span class="mono" style="font-size:11px;color:var(--muted-2)">'+bh.toFixed(1)+'h</span>':''),bp);}}
+  bpArr.forEach(function(b){if(bh>0&&coveredRow(b))return;h+=row(esc(b.name)+(b.hours>0?' <span class="mono" style="font-size:11px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span>':''),b.amount);});
   var man=0;dayEntries.forEach(function(e){if(e.type==='manual')man+=e.item.amount||0;});
   if(man>0)h+=row('Other pay',man);
   h+=row('Gross pay',gross,{top:true,bold:true});
@@ -2832,7 +2868,7 @@ function refreshEditBK(id){
     if(s._editOffsite){hDraft.offsite=true;hDraft.callIns=(callOpts&&callOpts.callIns)||[];hDraft.breakMin=0;hDraft.breakStart='';}
     var hRows=hsePriceShift(hDraft),hTot=hRows.reduce(function(t,b){return t+b.amount;},0);
     var hHtml='<div style="padding:8px 0;border-top:1px solid var(--line-soft)">';
-    hRows.forEach(function(b){hHtml+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';});
+    hRows.forEach(function(b){hHtml+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+rowAmt(b)+'</span></div>';});
     if(s._editOffsite)hHtml+='<div class="tiny" style="margin-top:6px">Off-site week totals update after saving.</div>';
     hHtml+='<div style="font-size:13px;font-weight:700;display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft)"><span>Priced now</span><span style="color:var(--blue)">'+fmtEUR(hTot)+'</span></div></div>';
     bkEl.innerHTML=hHtml;return;
@@ -2840,7 +2876,7 @@ function refreshEditBK(id){
   var split=splitShift(date,start,end,bhDates,breakMin,breakStart,ende,callOpts,(callOpts&&tiersOn())?tierCtxBefore(date,start,id):undefined);
   var totalAmt=0;for(var i=0;i<split.length;i++)totalAmt+=split[i].amount;
   var html='<div style="padding:8px 0;border-top:1px solid var(--line-soft)">';
-  for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';}
+  for(var i=0;i<split.length;i++){var b=split[i];html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+rowAmt(b)+'</span></div>';}
   html+='<div style="font-size:13px;font-weight:700;display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft)"><span>Gross</span><span style="color:var(--blue)">'+fmtEUR(totalAmt)+'</span></div></div>';
   bkEl.innerHTML=html;
 }
@@ -3441,7 +3477,7 @@ function openDayModal(ds){
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:14px;font-weight:700">'+(s.tplName||s.start+'–'+s.end)+'</div><div style="font-family:Fraunces,serif;font-size:18px;font-weight:600;color:var(--blue)">'+fmtEUR(s.tp||0)+'</div></div>';
     html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.start+'–'+s.end+' &middot; '+(s.th||0).toFixed(1)+'h'+(s.breakMin?' &middot; '+s.breakMin+'min break':'')+(s.offsite?' &middot; on call':'')+'</div>';
     if(s.offsite&&s.callIns&&s.callIns.length){html+='<div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:8px">'+s.callIns.map(function(ci){return'On site '+ci.start+' to '+ci.end;}).join(' &middot; ')+'</div>';}
-    if(split.length){html+='<div style="display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line-soft);padding-top:6px">';split.forEach(function(b){html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line-soft)"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' · '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+fmtEUR(b.amount)+'</span></div>';});html+='</div>';}
+    if(split.length){html+='<div style="display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line-soft);padding-top:6px">';split.forEach(function(b){html+='<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line-soft)"><span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:'+b.color+'"></span>'+esc(b.name)+' · '+b.hours.toFixed(1)+'h</span><span style="font-weight:600">'+rowAmt(b)+'</span></div>';});html+='</div>';}
     html+='<div style="display:flex;gap:8px;margin-top:10px"><button onclick="closeDayModal();startEdit('+s.id+')" style="flex:1;background:none;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;font-family:Geist,sans-serif;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer">Edit</button><button onclick="closeDayModal();delShift('+s.id+')" style="flex:1;background:none;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;font-family:Geist,sans-serif;font-size:13px;font-weight:600;color:var(--warn);cursor:pointer">Delete</button></div>';
     html+='</div>';
   });
@@ -3906,6 +3942,30 @@ initSheetSwipe('pay-sheet',closePaySheet);
     var nU=ieNetOfPayslip(octB,'2026-10-31');
     t('H29','No payslip entered: salary from January still drives the estimate',{gross:+sumB.toFixed(2),takeHomeBelowGross:true},
       {gross:+pU.gross.toFixed(2),takeHomeBelowGross:nU.keep>0&&nU.keep<octB},approx(pU.gross,sumB,0.01)&&nU.keep>0&&nU.keep<octB);
+    // Summary totals: gross is basic plus logged work. This month counts its
+    // salary, the year counts January to now, and an empty future month counts none.
+    var nw=new Date(),cy=nw.getFullYear(),cm=nw.getMonth()+1,mS=dateStr(new Date(cy,cm-1,1)),mE=dateStr(new Date(cy,cm,0));
+    var yB=0;for(var k30=1;k30<=cm;k30++)yB+=hseBasicInPeriod(cy,k30);
+    var fut=hseBasicInRange(dateStr(new Date(cy,cm+1,1)),dateStr(new Date(cy,cm+2,0)));
+    t('H30','Summary gross includes basic pay: this month, year to date, and nothing for an empty future month',
+      {month:+hseBasicInPeriod(cy,cm).toFixed(2),year:+yB.toFixed(2),future:0},
+      {month:+hseBasicInRange(mS,mE).toFixed(2),year:+hseBasicInRange(cy+'-01-01',cy+'-12-31').toFixed(2),future:fut},
+      approx(hseBasicInRange(mS,mE),hseBasicInPeriod(cy,cm),0.01)&&approx(hseBasicInRange(cy+'-01-01',cy+'-12-31'),yB,0.01)&&fut===0);
+    // Overtime logged two months ahead brings that month's salary into the total.
+    var fS=dateStr(new Date(cy,cm+1,10));manualEntries=[{id:9302,date:fS,amount:500}];
+    var futB=hseBasicInRange(dateStr(new Date(cy,cm+1,1)),dateStr(new Date(cy,cm+2,0)));
+    t('H31','Work logged in a future month brings that month\'s basic pay into its total',true,futB>0,futB>0);
+    // A full logged day, 08:00 to 18:00 on a Wednesday: 8 rostered hours are
+    // already in salary, the hour either side is overtime at time and a half.
+    var hh=hseHourly('1628',3,'2026-10-14').hourly,day={date:'2026-10-14',start:'08:00',end:'18:00',breakMin:0,breakStart:'',endsNextDay:false,hse:{ed:false,hourly:hh}};
+    var dr=hsePriceShift(day),drB=dr.filter(function(r){return r.name==='Basic';})[0]||{},drO=dr.filter(function(r){return r.name==='Overtime';})[0]||{};
+    var drT=dr.reduce(function(a2,r){return a2+r.amount;},0);
+    t('H32','Logged 08:00-18:00: 8h basic adds nothing on top of salary, 2h overtime at 1.5x',
+      {basicH:8,basicEUR:0,otH:2,total:+(3*hh).toFixed(2),shows:'In salary'},
+      {basicH:drB.hours,basicEUR:+(drB.amount||0).toFixed(2),otH:drO.hours,total:+drT.toFixed(2),shows:rowAmt(drB)},
+      drB.hours===8&&!(drB.amount>0)&&drO.hours===2&&approx(drT,3*hh,0.02)&&rowAmt(drB)==='In salary');
+    day.hse.ed=true;var drE=hsePriceShift(day).reduce(function(a2,r){return a2+r.amount;},0);
+    t('H33','ED premium on rostered hours is still extra pay',+((3+8/6)*hh).toFixed(2),+drE.toFixed(2),approx(drE,(3+8/6)*hh,0.02));
     manualEntries=keepM28;shifts=keepS28;
     settings.periodType=pS15;settings.tax=pT15;
     settings.hse=prevHse;
