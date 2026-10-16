@@ -330,6 +330,7 @@ details[open] summary .chev{transform:rotate(90deg)}
         </div>
         <div id="log-bk"></div>
         <button class="btn-primary" id="l-save-btn" onclick="addShift()" style="display:none">Save shift</button>
+        <div id="l-unpaid" style="margin-top:8px"></div>
         <div style="height:6px"></div>
       </div>
     </div>
@@ -793,7 +794,7 @@ function hseRowsWalk(s,byDate){
   // People log the whole day, rostered hours included. Salary already pays
   // those hours every month, so Basic hours are kept for the record but add
   // nothing: only the overtime and premiums on top are extra pay.
-  var sal=hseBasicForPeriod(s.date)>0;
+  var sal=hseSalaried()&&hseEmployedOn(s.date);
   function add(ds,name,rate,slip,mins){
     var k=(byDate?ds+'|':'')+name;
     if(name==='Basic'&&sal)rate=0;
@@ -977,19 +978,29 @@ function takeHomeCardHTML(){
 }
 function hsePointCardDue(){
   var p=hseProfile();if(!edHSE()||!p||!p.gradeCode||!HSE_SCALES||p.pointYear==null||!hseGrade(p.gradeCode))return false;
+  if(p.jobEnd&&p.jobEnd<dateStr(new Date()))return false;
   return +p.pointYear<hsePayYear();
 }
-var hseCardGradeOpen=false,hseCardPick=null,hseCardDate=null;
+var hseCardGradeOpen=false,hseCardPick=null,hseCardDate=null,hseCardLeaving=false;
 function hseCardFrom(){var d=hseCardDate||lastChangeover(dateStr(new Date()));return /^\d{4}-\d{2}-\d{2}$/.test(d)?d:lastChangeover(dateStr(new Date()));}
 function hseCardSetDate(v){hseCardDate=v;}
 function hseCardDone(msg){
-  var p=hseProfile();p.pointYear=hsePayYear();hseCardGradeOpen=false;hseCardDate=null;
+  var p=hseProfile();p.pointYear=hsePayYear();hseCardGradeOpen=false;hseCardLeaving=false;hseCardDate=null;
   hseRestampShifts(false);persist();renderSummary();renderBands();refreshLog();toast(msg);
 }
 function hseCardStep(up){
   var p=hseProfile();if(!p)return;
   if(up)hseRoleFrom(p,hseCardFrom(),p.gradeCode,(p.point||1)+1);
   hseCardDone(up?'Now on point '+p.point+' from '+fmtRangeDate(hseCardFrom()):'No change this year');
+}
+// Finishing at changeover: salary stops after the last day, which defaults to
+// the day before changeover.
+function hseCardLastDay(){var d=new Date(hseCardFrom()+'T12:00');d.setDate(d.getDate()-1);return dateStr(d);}
+function hseCardSaveLeaving(){
+  var v=(document.getElementById('hse-card-last')||{}).value||hseCardLastDay();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){toast('Pick a date');return;}
+  var p=hseProfile();if(!p)return;p.jobEnd=v;
+  hseCardDone('Salary stops after '+fmtRangeDate(v));
 }
 function hseCardOpenGrade(){hseCardGradeOpen=true;hseCardPick={gradeCode:'',point:1};renderSummary();}
 function hseCardSetPick(k,v){hseCardPick[k]=k==='point'?(parseInt(v)||1):v;if(k==='gradeCode')hseCardPick.point=1;renderSummary();}
@@ -1003,7 +1014,11 @@ function hseChangeoverCardHTML(){
   var p=hseProfile(),g=hseGrade(p.gradeCode),pc=p.point||1,top=pc>=g.points;
   var h='<div class="card" style="margin:16px 24px 0"><div style="font-size:14.5px;font-weight:600;margin-bottom:3px">July changeover</div>';
   var dateRow='<div class="field" style="margin-bottom:12px"><label class="lbl">From</label><input type="date" value="'+esc(hseCardFrom())+'" onchange="hseCardSetDate(this.value)"></div>';
-  if(hseCardGradeOpen){
+  if(hseCardLeaving){
+    h+='<div class="tiny" style="margin-bottom:10px">Your salary stops after your last day. Anything you work after that is paid in full.</div>';
+    h+='<div class="field" style="margin-bottom:12px"><label class="lbl">Last day in this job</label><input type="date" id="hse-card-last" value="'+esc(hseCardLastDay())+'"></div>';
+    h+='<div style="display:flex;gap:8px"><button class="btn-primary" style="flex:1" onclick="hseCardSaveLeaving()">Save</button><button class="btn-ghost" style="flex:1" onclick="hseCardLeaving=false;renderSummary()">Back</button></div>';
+  }else if(hseCardGradeOpen){
     var pick=hseCardPick||{gradeCode:'',point:1},pg=pick.gradeCode?hseGrade(pick.gradeCode):null;
     h+='<div class="tiny" style="margin-bottom:10px">Your new grade and point.</div>';
     h+='<div class="row-2" style="margin-bottom:10px"><div class="field"><label class="lbl">New grade</label><select onchange="hseCardSetPick(\'gradeCode\',this.value)"><option value=""'+(pick.gradeCode?'':' selected')+' disabled>Choose</option>';
@@ -1019,6 +1034,7 @@ function hseChangeoverCardHTML(){
     if(!top)h+='<button class="btn-primary" style="flex:1" onclick="hseCardStep(true)">Yes, point '+(pc+1)+'</button>';
     h+='<button class="'+(top?'btn-primary':'btn-ghost')+'" style="flex:1" onclick="hseCardOpenGrade()">New grade</button>';
     h+='<button class="btn-ghost" style="flex:1" onclick="hseCardStep(false)">No change</button></div>';
+    h+='<button class="btn-ghost" style="width:100%;margin-top:8px" onclick="hseCardLeaving=true;renderSummary()">Finishing this job</button>';
   }
   return h+'</div>';
 }
@@ -1099,6 +1115,44 @@ function hseRoleCardHTML(){
   h+='<div style="display:flex;gap:8px"><button class="btn-primary" style="flex:1'+(pd.mode?'':';opacity:.45;cursor:default')+'"'+(pd.mode?'':' disabled')+' onclick="hseRoleApply()">Apply</button><button class="btn-ghost" style="flex:1" onclick="hseRoleCancel()">Cancel</button></div>';
   return h+'</div>';
 }
+function setHseJob(k,v){
+  var p=hseProfile();if(!p)return;
+  v=/^\d{4}-\d{2}-\d{2}$/.test(v||'')?v:null;
+  var st=k==='jobStart'?v:p.jobStart,en=k==='jobEnd'?v:p.jobEnd;
+  if(st&&en&&en<st){toast('Finish date is before the start date');renderBands();return;}
+  p[k]=v;if(HSE_SCALES)hseRecomputeAll();persist();renderBands();renderSummary();renderTotals();renderUnpaid();
+}
+var unpaidOpen=false;
+function unpaidWeekdays(u){var n=0;for(var d=u.from,g=0;d<=(u.to||u.from)&&g<400;d=nextDayStr(d),g++){var w=new Date(d+'T12:00').getDay();if(w&&w<6)n++;}return n;}
+function renderUnpaid(){
+  var el=document.getElementById('l-unpaid');if(!el)return;
+  if(!hseSalaried()){el.innerHTML='';return;}
+  var p=hseProfile(),list=(p.unpaid||[]).slice().sort(function(a,b){return a.from<b.from?-1:1;});
+  var h='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div style="font-size:14.5px;font-weight:600;margin-bottom:2px">Unpaid leave</div><div class="tiny">Comes off your basic pay. Annual and sick leave need nothing.</div></div>';
+  if(!unpaidOpen)h+='<button class="btn-ghost" onclick="unpaidOpen=true;renderUnpaid()">+ Add</button>';
+  h+='</div>';
+  if(unpaidOpen){
+    var td=dateStr(new Date());
+    h+='<div class="row-2" style="margin-top:12px"><div class="field"><label class="lbl">From</label><input type="date" id="unpaid-from" value="'+td+'"></div><div class="field"><label class="lbl">To</label><input type="date" id="unpaid-to" value="'+td+'"></div></div>';
+    h+='<div style="display:flex;gap:8px;margin-top:10px"><button class="btn-primary" style="flex:1" onclick="addUnpaid()">Save</button><button class="btn-ghost" style="flex:1" onclick="unpaidOpen=false;renderUnpaid()">Cancel</button></div>';
+  }
+  list.forEach(function(u){
+    var n=unpaidWeekdays(u),lbl=fmtRangeDate(u.from)+(u.to&&u.to!==u.from?' to '+fmtRangeDate(u.to):'');
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0 0;margin-top:8px;border-top:1px solid var(--line-soft);font-size:13px"><span>'+esc(lbl)+' <span class="tiny">\u00b7 '+n+' day'+(n!==1?'s':'')+'</span></span><button class="btn-ghost" style="padding:4px 8px" aria-label="Remove unpaid leave" onclick="delUnpaid('+u.id+')">\u00d7</button></div>';
+  });
+  el.innerHTML=h+'</div>';
+}
+function addUnpaid(){
+  var f=(document.getElementById('unpaid-from')||{}).value,t=(document.getElementById('unpaid-to')||{}).value||f;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(f||'')){toast('Pick a date');return;}
+  if(t<f){var x=f;f=t;t=x;}
+  var u={id:Date.now(),from:f,to:t};
+  if(!unpaidWeekdays(u)){toast('No weekdays in those dates');return;}
+  var p=hseProfile();p.unpaid=(p.unpaid||[]).concat([u]);
+  unpaidOpen=false;persist();renderUnpaid();renderSummary();renderTotals();
+  var n=unpaidWeekdays(u);toast(n+' day'+(n!==1?'s':'')+' unpaid leave saved');
+}
+function delUnpaid(id){var p=hseProfile();if(!p)return;p.unpaid=(p.unpaid||[]).filter(function(u){return u.id!==id;});persist();renderUnpaid();renderSummary();renderTotals();toast('Unpaid leave removed');}
 function setHseEd(on){settings.hse=settings.hse||{point:1,hourlyOverride:null};settings.hse.ed=!!on;persist();refreshLog();}
 function setHseOverride(v){if(!settings.hse)return;var f=parseFloat(v);var auto=null;try{auto=+hseHourly(settings.hse.gradeCode,settings.hse.point||1,dateStr(new Date())).hourly.toFixed(2);}catch(e){}
   settings.hse.hourlyOverride=(isNaN(f)||f<=0||f===auto)?null:f;persist();renderBands();refreshLog();}
@@ -1126,6 +1180,9 @@ function hseSetupHTML(){
     if(p.hourlyOverride!=null)html+='<div class="tiny" style="margin-bottom:10px">You have overridden the scale rate; new shifts use your figure.</div>';
     if(pd)html+=hseRoleCardHTML();else html+=hseRolesListHTML();
     html+='<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:2px 0"><input type="checkbox" '+(p.ed?'checked':'')+' onchange="setHseEd(this.checked)" style="accent-color:var(--blue)"><span style="font-size:13px">Shift work</span></label>';
+    html+='<div class="row-2" style="margin-top:12px"><div class="field"><label class="lbl">Started this job</label><input type="date" value="'+esc(p0.jobStart||'')+'" onchange="setHseJob(\'jobStart\',this.value)"></div>';
+    html+='<div class="field"><label class="lbl">Finished this job</label><input type="date" value="'+esc(p0.jobEnd||'')+'" onchange="setHseJob(\'jobEnd\',this.value)"></div></div>';
+    html+='<div class="tiny" style="margin-top:6px">Salary starts and stops on these dates. Leave either one blank if it does not apply.</div>';
   }
   html+='</div></div>';
   html+='<div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;margin:20px 0 8px">Paid on payslip</div>';
@@ -1151,7 +1208,8 @@ function hsePayBullets(rateBullet){
     'The contract measures overtime as hours over 39 a week averaged across a 4-week roster; the app prices what you log and does not model that averaging.',
     'Public holidays for 2026 and 2027 are built in and applied automatically, midnight to midnight. There is no extra public holiday uplift on off-site call hours.',
     'Unrostered overtime: turn it on and enter when the shift was rostered to finish. Everything after that time pays the overtime rate and can land on its own payslip, including any call-in time after that point. Setting it to the shift start marks the whole shift unrostered.',
-    'Overnight shifts split their pay across the days they cover.'
+    'Overnight shifts split their pay across the days they cover.',
+    'Your salary covers the rostered hours you log, so only the overtime and premiums on top add to it. Annual, sick and study leave need nothing logged. Unpaid leave, logged on the Log tab, takes each weekday off your basic pay at its normal hours: 8 Monday to Thursday, 7 on Friday.'
   ];
   return bullets;
 }
@@ -1447,17 +1505,41 @@ function hseBasicInPeriod(yr,n){
   var p=hseProfile();if(!p||!p.gradeCode||!HSE_SCALES)return 0;
   var of=taxPeriodNo(yr+'-06-15').of,mid=periodMidDate(yr,n);
   var at=function(r){var inf=hseHourly(r.gradeCode,r.point,mid);return inf?inf.annual/of:0;};
-  if(of!==12)return at(hseRoleOn(mid));
+  if(of!==12)return hseEmployedOn(mid)?Math.max(0,at(hseRoleOn(mid))-hseUnpaidInPeriod(yr,n).amount):0;
   var first=dateStr(new Date(yr,n-1,1)),lastD=new Date(yr,n,0),last=dateStr(lastD),days=lastD.getDate();
-  var starts=[1];
-  hseRoles(p).forEach(function(x){if(x.from&&x.from>first&&x.from<=last){var d=parseInt(x.from.slice(8),10);if(starts.indexOf(d)<0)starts.push(d);}});
+  var starts=[1],cut=function(ds){if(ds&&ds>first&&ds<=last){var d=parseInt(ds.slice(8),10);if(starts.indexOf(d)<0)starts.push(d);}};
+  hseRoles(p).forEach(function(x){cut(x.from);});
+  // Starting or finishing mid-month pays only the days in the job.
+  cut(p.jobStart);if(p.jobEnd)cut(nextDayStr(p.jobEnd));
   starts.sort(function(x,y){return x-y;});
   var tot=0;
   for(var i=0;i<starts.length;i++){
-    var d1=(i+1<starts.length)?starts[i+1]:days+1;
-    tot+=at(hseRoleOn(first.slice(0,8)+(starts[i]<10?'0':'')+starts[i]))*(d1-starts[i])/days;
+    var d1=(i+1<starts.length)?starts[i+1]:days+1,dd=first.slice(0,8)+(starts[i]<10?'0':'')+starts[i];
+    if(hseEmployedOn(dd))tot+=at(hseRoleOn(dd))*(d1-starts[i])/days;
   }
-  return tot;
+  return Math.max(0,tot-hseUnpaidInPeriod(yr,n).amount);
+}
+// In the job on this date, going by the start and finish dates in Setup.
+function hseEmployedOn(ds){var p=hseProfile()||{};return (!p.jobStart||ds>=p.jobStart)&&(!p.jobEnd||ds<=p.jobEnd);}
+// Paid a salary at all: a grade on a known scale. Finishing the job does not
+// change this; it only stops the salary from that date.
+function hseSalaried(){var p=hseProfile();return edHSE()&&!!(p&&p.gradeCode&&HSE_SCALES&&hseGrade(p.gradeCode));}
+// Unpaid leave comes off basic pay: each weekday at its normal hours (8 Monday
+// to Thursday, 7 on Friday, 39 a week) at that day's basic rate, on the payslip
+// basic pay lands on. A bank holiday given up counts like any other weekday.
+function hseUnpaidInPeriod(yr,n){
+  var p=hseProfile(),out={days:0,amount:0};if(!p||!p.unpaid||!p.unpaid.length)return out;
+  var core=hseSlips().core||0;
+  p.unpaid.forEach(function(u){
+    for(var d=u.from,g=0;d&&d<=(u.to||u.from)&&g<400;d=nextDayStr(d),g++){
+      var dow=new Date(d+'T12:00').getDay();if(dow===0||dow===6||!hseEmployedOn(d))continue;
+      var pd=payDateOf(advancePeriodKey(getPeriodKey(d),core));
+      if(+pd.slice(0,4)!==yr||taxPeriodNo(pd).n!==n)continue;
+      var r=hseRoleOn(d),inf=hseHourly(r.gradeCode,r.point,d);if(!inf)continue;
+      out.days++;out.amount+=inf.hourly*(dow===5?7:8);
+    }
+  });
+  return out;
 }
 // A Basic row from logged hours that salary already pays: show it as such
 // rather than as €0.00.
@@ -1469,7 +1551,7 @@ function hseBasicForPeriod(ds,of){return hseBasicInPeriod(+ds.slice(0,4),taxPeri
 // we know about (first logged work or the anchor) up to this period, or later
 // when work is already logged ahead. Future salary is not counted on its own.
 function hseBasicInRange(fromDS,toDS){
-  if(!edHSE()||!(hseBasicForPeriod(dateStr(new Date()))>0))return 0;
+  if(!hseSalaried())return 0;
   var today=dateStr(new Date()),first=today,last=taxPeriodEnd(today),anc=taxCfg().ytd;
   var see=function(d){if(d<first)first=d;var e=taxPeriodEnd(d);if(e>last)last=e;};
   shifts.forEach(function(x){see(x.date);});manualEntries.forEach(function(m){see(m.date);});
@@ -1794,7 +1876,7 @@ function ieEstimate(ds){
   var stopTax=ieIncomeTax(pos.taxable,c.srcop,c.credits),stopUsc=ieUSC(pos.uscable,c.r);
   var prsi=pos.anchored?pos.paid.prsi:0,ae=pos.anchored?pos.paid.ae:0;
   var pen=0,asc=0;
-  if(edHSE()&&hseBasicForPeriod(asAt)>0){
+  if(hseSalaried()){
     // PRSI is charged on each period's whole pay, salary included.
     pen=pos.anchored?pos.paid.pension:0;asc=pos.anchored?pos.paid.asc:0;
     var yr=+asAt.slice(0,4),xp={};
@@ -1861,7 +1943,7 @@ function ieMarginal(amount,ds){
 // when nothing is logged.
 function payslipsPaidIn(fromDS,toDS){
   var m=grossByPeriod(fromDS,toDS);
-  if(edHSE()&&hseBasicForPeriod(fromDS)>0){
+  if(hseSalaried()){
     var pk=advancePeriodKey(getPeriodKey(fromDS),-1);
     for(var g=0;g<60;g++,pk=advancePeriodKey(pk,1)){
       var pd=payDateOf(pk);if(pd>toDS)break;if(pd<fromDS)continue;
@@ -2281,7 +2363,7 @@ function monthKeyName(mk){var d=new Date(Math.floor(mk/100),mk%100,1);return d.t
 
 function renderSummary(){
   var el=document.getElementById('summary-body');if(!el)return;
-  var salaried=edHSE()&&hseBasicForPeriod(dateStr(new Date()))>0;
+  var salaried=hseSalaried();
   if(!shifts.length&&!manualEntries.length&&!salaried){
     el.innerHTML='<div class="empty-state"><svg width="90" height="90" viewBox="0 0 1024 1024" style="margin-bottom:20px"><circle cx="512" cy="512" r="500" fill="var(--cream-card)" stroke="var(--line)" stroke-width="12"/><path d="M 540.01 245.47 A 268 268 0 0 1 717.30 684.27" stroke="var(--blue)" stroke-width="78" fill="none" stroke-linecap="round"/><path d="M 684.27 717.30 A 268 268 0 0 1 312.84 691.33" stroke="var(--blue)" stroke-opacity="0.6" stroke-width="78" fill="none" stroke-linecap="round"/><path d="M 284.72 654.02 A 268 268 0 0 1 289.82 362.14" stroke="var(--blue)" stroke-opacity="0.38" stroke-width="78" fill="none" stroke-linecap="round"/><path d="M 319.22 325.83 A 268 268 0 0 1 521.35 244.16" stroke="var(--blue)" stroke-opacity="0.22" stroke-width="78" fill="none" stroke-linecap="round"/><line x1="512" y1="512" x2="512" y2="344" stroke="var(--blue)" stroke-width="40" stroke-linecap="round"/><line x1="512" y1="512" x2="605.5" y2="590.4" stroke="var(--blue)" stroke-width="40" stroke-linecap="round"/><circle cx="512" cy="512" r="34" fill="var(--cream-card)"/><circle cx="512" cy="512" r="34" fill="none" stroke="var(--blue)" stroke-width="22"/></svg><div class="empty-title">No shifts yet</div><div class="empty-sub">Log a shift and your estimated gross will show up here, split across your pay bands.</div><button class="btn-primary" style="max-width:260px" onclick="go(\'log\',document.getElementById(\'tb-log\'))">Log your first shift</button></div>';
     return;
@@ -2394,7 +2476,7 @@ function setCustomEnd(v){customEnd=v;renderTotals();}
 function fmtRangeDate(ds){var d=new Date(ds+'T12:00');return d.toLocaleDateString('en-IE',{day:'numeric',month:'short',year:'numeric'});}
 function renderTotals(){
   var el=document.getElementById('totals-body');if(!el)return;
-  if(!shifts.length&&!manualEntries.length&&!(edHSE()&&hseBasicForPeriod(dateStr(new Date()))>0)){
+  if(!shifts.length&&!manualEntries.length&&!hseSalaried()){
     el.innerHTML='<div class="empty-state"><div class="empty-title">Nothing to total yet</div><div class="empty-sub">Log a shift and totals will show up here.</div></div>';
     return;
   }
@@ -2541,7 +2623,7 @@ function buildListHTML(){
   // On HSE payroll salary makes every month a payslip, logged shifts or not.
   // List every month from the first one we know about (first logged shift or
   // the anchor payslip) up to now, so earlier payslips appear too.
-  if(isPayslipMode&&edHSE()&&hseBasicForPeriod(dateStr(new Date()))>0){
+  if(isPayslipMode&&hseSalaried()){
     var ck=currentPeriodKeyOffset(0),known=Object.keys(periodMap).map(Number),anc0=taxCfg().ytd;
     if(anc0)known.push(getPeriodKey(anc0.date));
     var first=known.length?Math.min.apply(null,known):ck;
@@ -2701,7 +2783,9 @@ function payslipBreakdownHTML(k,bpArr,dayEntries,gross,est){
   var h='<div style="padding:4px 0 6px">';
   h+='<div class="lbl" style="margin:4px 0 2px">Pay</div>';
   var bh=0;
-  if(edHSE()){var bp=hseBasicForPeriod(payDateOf(k));if(bp>0){bpArr.forEach(function(b){if(coveredRow(b))bh+=b.hours;});h+=row('Basic pay'+(bh>0?' <span class="mono" style="font-size:11px;color:var(--muted-2)">'+bh.toFixed(1)+'h</span>':''),bp);}}
+  if(edHSE()){var bp=hseBasicForPeriod(payDateOf(k));if(bp>0){bpArr.forEach(function(b){if(coveredRow(b))bh+=b.hours;});h+=row('Basic pay'+(bh>0?' <span class="mono" style="font-size:11px;color:var(--muted-2)">'+bh.toFixed(1)+'h</span>':''),bp);
+    var upd=payDateOf(k),un=hseUnpaidInPeriod(+upd.slice(0,4),taxPeriodNo(upd).n);
+    if(un.days)h+='<div class="tiny" style="margin:-3px 0 4px">After '+un.days+' day'+(un.days!==1?'s':'')+' unpaid leave ('+fmtEUR(un.amount)+')</div>';}}
   bpArr.forEach(function(b){if(bh>0&&coveredRow(b))return;h+=row(esc(b.name)+(b.hours>0?' <span class="mono" style="font-size:11px;color:var(--muted-2)">'+b.hours.toFixed(1)+'h</span>':''),b.amount);});
   var man=0;dayEntries.forEach(function(e){if(e.type==='manual')man+=e.item.amount||0;});
   if(man>0)h+=row('Other pay',man);
@@ -3500,7 +3584,7 @@ shifts.forEach(function(s){
   }
   s.bh=s.bhDates.length>0;
 });
-if(edHSE())loadHseData().then(function(){hseRecomputeAll();renderSummary();renderBands();refreshLog();}).catch(function(){});
+if(edHSE())loadHseData().then(function(){hseRecomputeAll();renderSummary();renderBands();refreshLog();renderUnpaid();}).catch(function(){});
 else if(tiersWeekly())recomputeAllShifts();else shifts.forEach(function(s){recomputeDateSplit(s);});
 setLogDate(new Date().toISOString().split('T')[0]);
 renderTplChips();
@@ -3514,6 +3598,7 @@ if(edHSE()){
   var bhCard=document.getElementById('l-bh-card');if(bhCard)bhCard.style.display='none';
   var brkCardH=document.getElementById('l-break-card');if(brkCardH)brkCardH.style.display='none';
   var ncCardH=document.getElementById('l-nightcore-card');if(ncCardH)ncCardH.style.display='block';
+  renderUnpaid();
   var ciLbl=document.getElementById('l-ci-lbl');if(ciLbl)ciLbl.style.display='none';
   var uroCardH=document.getElementById('l-unro-card');if(uroCardH)uroCardH.style.display='block';
   var bandsHdrT=document.getElementById('bands-hdr-title');if(bandsHdrT)bandsHdrT.textContent='Your pay';
@@ -3966,6 +4051,31 @@ initSheetSwipe('pay-sheet',closePaySheet);
       drB.hours===8&&!(drB.amount>0)&&drO.hours===2&&approx(drT,3*hh,0.02)&&rowAmt(drB)==='In salary');
     day.hse.ed=true;var drE=hsePriceShift(day).reduce(function(a2,r){return a2+r.amount;},0);
     t('H33','ED premium on rostered hours is still extra pay',+((3+8/6)*hh).toFixed(2),+drE.toFixed(2),approx(drE,(3+8/6)*hh,0.02));
+    // Finishing mid-month pays the days in the job, then nothing.
+    var fullO=hseBasicInPeriod(2026,10);
+    settings.hse.jobEnd='2026-10-15';
+    var endO=hseBasicInPeriod(2026,10),endN=hseBasicInPeriod(2026,11);
+    t('H34','Finished on 15 October: October pays 15 of 31 days, November pays nothing',
+      {oct:+(fullO*15/31).toFixed(2),nov:0},{oct:+endO.toFixed(2),nov:+endN.toFixed(2)},approx(endO,fullO*15/31,0.01)&&endN===0);
+    var after={date:'2026-10-21',start:'09:00',end:'17:00',breakMin:0,breakStart:'',endsNextDay:false,hse:{ed:false,hourly:hh}};
+    var afterT=hsePriceShift(after).reduce(function(a2,r){return a2+r.amount;},0);
+    t('H35','A day logged after finishing is paid in full, not covered by salary',+(8*hh).toFixed(2),+afterT.toFixed(2),approx(afterT,8*hh,0.02));
+    settings.hse.jobEnd=null;settings.hse.jobStart='2026-10-20';
+    var stO=hseBasicInPeriod(2026,10),stS=hseBasicInPeriod(2026,9);
+    t('H36','Started on 20 October: September pays nothing, October pays 12 of 31 days',
+      {sep:0,oct:+(fullO*12/31).toFixed(2)},{sep:+stS.toFixed(2),oct:+stO.toFixed(2)},stS===0&&approx(stO,fullO*12/31,0.01));
+    settings.hse.jobStart=null;
+    // Unpaid leave Thursday to Monday: Thu 8h + Fri 7h + Mon 8h, weekend skipped.
+    settings.hse.slips={core:0,ot:0,uot:0,offsite:0};
+    settings.hse.unpaid=[{id:1,from:'2026-10-08',to:'2026-10-12'}];
+    var unO=hseBasicInPeriod(2026,10),unI=hseUnpaidInPeriod(2026,10);
+    t('H37','Unpaid leave Thu to Mon takes 3 days (23 hours) of basic off that payslip',
+      {days:3,basic:+(fullO-23*hh).toFixed(2)},{days:unI.days,basic:+unO.toFixed(2)},unI.days===3&&approx(unO,fullO-23*hh,0.02));
+    // Paid in arrears: the deduction follows basic pay onto the next payslip.
+    settings.hse.slips.core=1;
+    var arO=hseBasicInPeriod(2026,10),arN=hseUnpaidInPeriod(2026,11).days;
+    t('H38','With basic paid a payslip later, unpaid leave comes off the next payslip',{oct:+fullO.toFixed(2),novDays:3},{oct:+arO.toFixed(2),novDays:arN},approx(arO,fullO,0.01)&&arN===3);
+    settings.hse.unpaid=[];settings.hse.slips={core:0,ot:0,uot:0,offsite:0};
     manualEntries=keepM28;shifts=keepS28;
     settings.periodType=pS15;settings.tax=pT15;
     settings.hse=prevHse;
