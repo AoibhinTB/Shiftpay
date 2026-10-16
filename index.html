@@ -1829,6 +1829,23 @@ function ieMarginal(amount,ds){
 // between are why a payslip can deduct far less than the marginal rate on an
 // extra shift, and why quiet weeks make the next payslip cheap. With a payslip
 // anchor the previous position is exact, gaps included.
+// Every payslip paid between two dates, with what it pays and its estimated
+// deductions. On HSE payroll salary makes each pay period a payslip even
+// when nothing is logged.
+function payslipsPaidIn(fromDS,toDS){
+  var m=grossByPeriod(fromDS,toDS);
+  if(edHSE()&&hseBasicForPeriod(fromDS)>0){
+    var pk=advancePeriodKey(getPeriodKey(fromDS),-1);
+    for(var g=0;g<60;g++,pk=advancePeriodKey(pk,1)){
+      var pd=payDateOf(pk);if(pd>toDS)break;if(pd<fromDS)continue;
+      if(!m[pk])m[pk]={gross:0,ds:pd};
+      m[pk].gross+=hseBasicForPeriod(pd);
+    }
+  }
+  var out=[];
+  for(var k in m){if(m[k].gross>0)out.push({pk:+k,ds:m[k].ds,gross:m[k].gross,est:ieNetOfPayslip(m[k].gross,m[k].ds)});}
+  return out.sort(function(a,b){return a.ds<b.ds?-1:1;});
+}
 function ieNetOfPayslip(amount,ds){
   var c=taxCfg(ds),pos=taxPosition(ds),p=taxPeriodNo(ds);
   var pen=0,asc=0;
@@ -2305,14 +2322,15 @@ function renderSummary(){
   var html='';
   if(takeHomeCardDue())html+=takeHomeCardHTML();
   if(hsePointCardDue())html+=hseChangeoverCardHTML();
-  html+='<div class="hero"><div class="hero-lbl">'+(showNet?'Est. Take Home':'Est. Gross')+' &middot; Next Payslip</div>';
+  html+='<div class="hero"><div class="hero-lbl">'+(taxOn()?'Est. Take Home':'Est. Gross')+' &middot; Next Payslip</div>';
   html+='<div class="hero-num">€'+efmt+'<span class="cent">.'+(eps[1]||'00')+'</span></div>';
-  if(showNet)html+='<div class="hero-tiny">'+fmtEUR(nextPay)+' gross, less '+fmtEUR(hn.deduct)+' in deductions</div>';
+  if(showNet)html+='<div class="hero-tiny">'+fmtEUR(nextPay)+' gross</div>';
+  else if(taxOn())html+='<div class="hero-tiny">Nothing logged for this payslip yet</div>';
   else html+='<div class="hero-tiny">Pay earned this '+payPeriodLabel()+', plus deferred amounts from previous '+payPeriodLabel()+'s</div>';
   if(settings.nextPayslipDate)html+='<div class="hero-tiny" style="margin-top:4px">Period ends <span class="hero-pill">'+payslipStr+'</span></div>';
   if(showNet&&!anchored)html+='<div class="hero-tiny" style="margin-top:8px">Rough estimate. Add a payslip in Setup for more accuracy.</div>';
   if(!taxOn()&&nextPay>0)html+='<div class="hero-tiny" style="margin-top:8px">Turn on net pay in Setup to see your take home.</div>';
-  html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">'+(showNet?'Estimate. Verify against your payslip.':'Gross only, before tax, USC, PRSI and pension.')+'</div>';
+  html+='<div class="hero-tiny" style="margin-top:10px;font-size:11px;opacity:.75;line-height:1.5">'+(taxOn()?'Estimate. Verify against your payslip.':'Gross only, before tax, USC, PRSI and pension.')+'</div>';
   html+='</div>';
   var bandArr=[];for(var k in byBand){byBand[k].id=k;bandArr.push(byBand[k]);}stableBandOrder(bandArr);
   var totalAmt=bandArr.reduce(function(a,b){return a+b.amount;},0)||1;
@@ -2401,6 +2419,25 @@ function renderTotals(){
   html+='<div class="hero" id="totals-hero" style="touch-action:pan-y"><div class="hero-lbl">Total gross · '+rangeLabel+((totalsRange==='month'||totalsRange==='year')?' <span style="opacity:.5;font-weight:400">· swipe ‹ ›</span>':'')+'</div>';
   html+='<div class="hero-num">€'+fpInt+'<span class="cent">.'+(fp[1]||'00')+'</span></div>';
   html+='<div class="hero-tiny">'+totalHrs.toFixed(1)+'h · '+shiftCount+' shift'+(shiftCount!==1?'s':'')+(manualAmt>0?(' · '+fmtEUR(manualAmt)+' manual'):'')+'</div></div>';
+  if(taxOn()&&totalsRange==='month'){
+    // Net pay for the payslips paid this month, worked out payslip by payslip.
+    var slips=payslipsPaidIn(dateStr(rangeStart),dateStr(rangeEnd));
+    if(slips.length){
+      var mRow=function(lbl,val,neg){return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:14px"><span style="font-weight:500">'+lbl+'</span><span style="font-weight:600;font-variant-numeric:tabular-nums'+(neg?';color:var(--muted)':'')+'">'+fmtEUR(val)+'</span></div>';};
+      var T={gross:0,keep:0,tax:0,usc:0,prsi:0,pension:0,asc:0,ae:0,other:0};
+      slips.forEach(function(x){T.gross+=x.gross;T.keep+=x.est.keep;for(var q in x.est.parts)T[q]+=x.est.parts[q];});
+      html+='<div class="pad-x" style="margin-top:12px"><div class="card"><div class="lbl" style="margin-bottom:10px">Paid in '+rangeLabel+' \u00b7 '+slips.length+' payslip'+(slips.length!==1?'s':'')+'</div>';
+      html+=mRow('Gross pay',T.gross,false);
+      html+=mRow('Income tax',T.tax,true);html+=mRow('USC',T.usc,true);html+=mRow('PRSI',T.prsi,true);
+      if(T.pension>0)html+=mRow('Pension',T.pension,true);
+      if(T.asc>0)html+=mRow('ASC',T.asc,true);
+      if(T.ae>0)html+=mRow('Auto enrolment',T.ae,true);
+      if(T.other>0)html+=mRow('Other deductions',T.other,true);
+      html+='<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px"><span style="font-size:13px;font-weight:700">Est. take home</span><span style="font-family:Fraunces,serif;font-size:22px;font-weight:600;color:var(--blue);letter-spacing:-0.01em">'+fmtEUR(T.keep)+'</span></div>';
+      html+='<div class="tiny" style="margin-top:10px">'+(taxCfg().ytd?'Estimate, by the date each payslip is paid.':'Rough estimate. Add a payslip in Setup for more accuracy.')+'</div>';
+      html+='</div></div>';
+    }
+  }
   if(taxOn()&&totalsRange==='year'){
     var upto=(rangeEnd<now)?dateStr(rangeEnd):dateStr(now);
     var est=ieEstimate(upto);
@@ -2625,7 +2662,7 @@ function buildListHTML(){
 // An opened payslip in the Payslip view, laid out like the payslip itself:
 // what it pays, what comes off, what lands in the bank.
 function payslipBreakdownHTML(k,bpArr,dayEntries,gross,est){
-  var row=function(lbl,val,o){o=o||{};return '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;'+(o.top?'border-top:1px solid var(--line-soft);':'')+'font-size:'+(o.big?'14.5':'13.5')+'px'+(o.bold?';font-weight:700':'')+'"><span'+(o.muted?' style="color:var(--muted)"':'')+'>'+lbl+'</span><span style="font-variant-numeric:tabular-nums'+(o.neg?';color:var(--muted)':'')+(o.bold?';font-weight:700':';font-weight:600')+'">'+(o.neg?'\u2212':'')+fmtEUR(val)+'</span></div>';};
+  var row=function(lbl,val,o){o=o||{};return '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;'+(o.top?'border-top:1px solid var(--line-soft);':'')+'font-size:'+(o.big?'14.5':'13.5')+'px'+(o.bold?';font-weight:700':'')+'"><span'+(o.muted?' style="color:var(--muted)"':'')+'>'+lbl+'</span><span style="font-variant-numeric:tabular-nums'+(o.neg?';color:var(--muted)':'')+(o.bold?';font-weight:700':';font-weight:600')+'">'+fmtEUR(val)+'</span></div>';};
   var h='<div style="padding:4px 0 6px">';
   h+='<div class="lbl" style="margin:4px 0 2px">Pay</div>';
   if(edHSE()){var bp=hseBasicForPeriod(payDateOf(k));if(bp>0)h+=row('Basic pay',bp);}
@@ -2644,7 +2681,6 @@ function payslipBreakdownHTML(k,bpArr,dayEntries,gross,est){
     h+=row('Est. take home',est.keep,{top:true,bold:true,big:true});
     h+='<div class="tiny" style="margin-top:6px">'+(taxCfg().ytd?'Estimate. Check against your payslip.':'Rough estimate. Add a payslip in Setup for more accuracy.')+'</div>';
   }else if(!taxOn())h+='<div class="tiny" style="margin-top:8px">Turn on net pay in Setup to see take home.</div>';
-  h+='<div class="tiny" style="margin-top:8px">Shifts are listed under the Shifts view.</div>';
   return h+'</div>';
 }
 function buildEditFormHTML(s){
@@ -4170,6 +4206,9 @@ initSheetSwipe('pay-sheet',closePaySheet);
     t('HPF8','Anchored on September, August\'s year to date is worked back exactly',
       {taxable:AUG.taxableTd,prsiable:AUG.prsiableTd},{taxable:+backA.taxable.toFixed(2),prsiable:+backA.uscable.toFixed(2)},
       approx(backA.taxable,AUG.taxableTd,0.02)&&approx(backA.uscable,AUG.prsiableTd,0.02));
+    var sepSlips=payslipsPaidIn('2026-09-01','2026-09-30'),sepKeep=sepSlips.reduce(function(a,x){return a+x.est.keep;},0);
+    t('HPF9','Summary month view: payslips paid in September add up to the real nett pay',
+      {payslips:1,nett:FX.nett},{payslips:sepSlips.length,nett:+sepKeep.toFixed(2)},sepSlips.length===1&&approx(sepKeep,FX.nett,0.05));
     settings.tax.ytd=keepYtd;
 
     // Never updating the anchor: still on August, with September already paid,
