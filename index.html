@@ -736,11 +736,13 @@ function hseHourly(gradeCode,point,ds){
 // Slot classification (Aoibhin's rostering model): standard hours are Mon-Thu
 // 09:00-17:00 and Fri 09:00-16:00; anything outside them is overtime. Sundays
 // and public holidays pay double time whether rostered or not, so no separate
-// shift-type input is needed.
+// shift-type input is needed. A public holiday inside standard hours is
+// flagged core: hseRowsWalk splits it into basic plus the premium.
+function hseCoreHour(dow,tod){return(dow<=3&&tod>=540&&tod<1020)||(dow===4&&tod>=540&&tod<960);}
 function hseSlotClass(dow,slotDS,tod){
-  if(isPublicHoliday(slotDS))return{label:'Public holiday',mult:HSE_OT_MULT.ph};
+  if(isPublicHoliday(slotDS))return{label:'Public holiday',mult:HSE_OT_MULT.ph,core:hseCoreHour(dow,tod)};
   if(dow===6)return{label:'Sunday',mult:HSE_OT_MULT.sunday};
-  if((dow<=3&&tod>=540&&tod<1020)||(dow===4&&tod>=540&&tod<960))return{label:'Basic',mult:1,std:true};
+  if(hseCoreHour(dow,tod))return{label:'Basic',mult:1,std:true};
   return{label:'Overtime',mult:HSE_OT_MULT.weekday};
 }
 function hseSlips(){var p=hseProfile();var sl=(p&&p.slips)||{};return{core:sl.core||0,ot:sl.ot||0,uot:sl.uot||0,offsite:sl.offsite||0};}
@@ -844,6 +846,14 @@ function hseRowsWalk(s,byDate){
       else if(dow===6)add(slotDS,'Sunday premium',h,slips.ot,15);
       else if(night&&night.qualifies&&hseInNightWindow(tod,night))add(slotDS,'Night premium',h*0.25,slips.ot,15);
       if(ed)add(slotDS,'ED premium',h*HSE_ED_PREMIUM,slips.ot,15);
+      return;
+    }
+    if(c.core){
+      // Rostered hours on a public holiday (Contract s.11): basic time plus
+      // single time extra, 2T in all. Salary already pays the basic part, so
+      // only the premium is extra pay for a salaried doctor.
+      add(slotDS,'Basic',h,slips.core,15);
+      add(slotDS,'Public holiday premium',h,slips.ot,15);
       return;
     }
     add(slotDS,c.label,h*c.mult,c.std?slips.core:slips.ot,15);
@@ -4051,6 +4061,15 @@ initSheetSwipe('pay-sheet',closePaySheet);
       drB.hours===8&&!(drB.amount>0)&&drO.hours===2&&approx(drT,3*hh,0.02)&&rowAmt(drB)==='In salary');
     day.hse.ed=true;var drE=hsePriceShift(day).reduce(function(a2,r){return a2+r.amount;},0);
     t('H33','ED premium on rostered hours is still extra pay',+((3+8/6)*hh).toFixed(2),+drE.toFixed(2),approx(drE,(3+8/6)*hh,0.02));
+    // Rostered 09:00-17:00 on a public holiday (Mon 26 Oct 2026): salary pays
+    // the basic, the premium is single time extra, not double time on top.
+    var ph={date:'2026-10-26',start:'09:00',end:'17:00',breakMin:0,breakStart:'',endsNextDay:false,hse:{ed:false,hourly:hh}};
+    var pr=hsePriceShift(ph),prB=pr.filter(function(r){return r.name==='Basic';})[0]||{},prP=pr.filter(function(r){return r.name==='Public holiday premium';})[0]||{};
+    var prT=pr.reduce(function(a2,r){return a2+r.amount;},0);
+    t('H33b','Rostered public holiday 09:00-17:00 on salary: 8h in salary plus 8h single time extra',
+      {basicH:8,basicEUR:0,premH:8,total:+(8*hh).toFixed(2)},
+      {basicH:prB.hours,basicEUR:+(prB.amount||0).toFixed(2),premH:prP.hours,total:+prT.toFixed(2)},
+      prB.hours===8&&!(prB.amount>0)&&prP.hours===8&&approx(prT,8*hh,0.02));
     // Finishing mid-month pays the days in the job, then nothing.
     var fullO=hseBasicInPeriod(2026,10);
     settings.hse.jobEnd='2026-10-15';
