@@ -1515,7 +1515,19 @@ function hseBasicInPeriod(yr,n){
   var p=hseProfile();if(!p||!p.gradeCode||!HSE_SCALES)return 0;
   var of=taxPeriodNo(yr+'-06-15').of,mid=periodMidDate(yr,n);
   var at=function(r){var inf=hseHourly(r.gradeCode,r.point,mid);return inf?inf.annual/of:0;};
-  if(of!==12)return hseEmployedOn(mid)?Math.max(0,at(hseRoleOn(mid))-hseUnpaidInPeriod(yr,n).amount):0;
+  // Weekly and fortnightly salary is paid by the day: annual / 365.25 for each
+  // day in the job, so a full fortnight is annual / 365.25 x 14 (the HSE's
+  // fortnightly payroll guide) and starting or finishing mid-period pays only
+  // the days worked. Each day is priced on its own grade, point and scale row.
+  if(of!==12){
+    var len=of===26?14:7,p0=dateStr(new Date(yr,0,1+(n-1)*len)),wk=0;
+    for(var di=0,dd0=p0;di<len&&+dd0.slice(0,4)===yr;di++,dd0=nextDayStr(dd0)){
+      if(!hseEmployedOn(dd0))continue;
+      var rd=hseRoleOn(dd0),infd=hseHourly(rd.gradeCode,rd.point,dd0);
+      if(infd)wk+=infd.annual/365.25;
+    }
+    return Math.max(0,wk-hseUnpaidInPeriod(yr,n).amount);
+  }
   var first=dateStr(new Date(yr,n-1,1)),lastD=new Date(yr,n,0),last=dateStr(lastD),days=lastD.getDate();
   var starts=[1],cut=function(ds){if(ds&&ds>first&&ds<=last){var d=parseInt(ds.slice(8),10);if(starts.indexOf(d)<0)starts.push(d);}};
   hseRoles(p).forEach(function(x){cut(x.from);});
@@ -4095,6 +4107,19 @@ initSheetSwipe('pay-sheet',closePaySheet);
     var arO=hseBasicInPeriod(2026,10),arN=hseUnpaidInPeriod(2026,11).days;
     t('H38','With basic paid a payslip later, unpaid leave comes off the next payslip',{oct:+fullO.toFixed(2),novDays:3},{oct:+arO.toFixed(2),novDays:arN},approx(arO,fullO,0.01)&&arN===3);
     settings.hse.unpaid=[];settings.hse.slips={core:0,ot:0,uot:0,offsite:0};
+    // Fortnightly and weekly salary by the day (annual / 365.25 per day).
+    var annF=hseHourly('1628',3,'2026-10-15').annual;
+    settings.periodType='biweekly';
+    var fnFull=hseBasicInPeriod(2026,21);
+    t('H39','A full fortnight pays annual / 365.25 x 14, not annual / 26',+(annF*14/365.25).toFixed(2),+fnFull.toFixed(2),approx(fnFull,annF*14/365.25,0.01));
+    settings.hse.jobStart='2026-10-01';
+    var fnStart=hseBasicInPeriod(2026,20);
+    t('H40','Starting mid-fortnight pays only the days in the job (1 to 7 October)',+(annF*7/365.25).toFixed(2),+fnStart.toFixed(2),approx(fnStart,annF*7/365.25,0.01));
+    settings.hse.jobStart=null;
+    settings.periodType='weekly';
+    var wkFull=hseBasicInPeriod(2026,41);
+    t('H41','A full week pays annual / 365.25 x 7',+(annF*7/365.25).toFixed(2),+wkFull.toFixed(2),approx(wkFull,annF*7/365.25,0.01));
+    settings.periodType=pS15;
     manualEntries=keepM28;shifts=keepS28;
     settings.periodType=pS15;settings.tax=pT15;
     settings.hse=prevHse;

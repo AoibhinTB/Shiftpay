@@ -1,4 +1,4 @@
-var CACHE = 'shiftpay-v53';
+var CACHE = 'shiftpay-v54';
 var ASSETS = [
   './',
   './index.html',
